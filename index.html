@@ -3327,14 +3327,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Kairos">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="icon" href="img/icon-192.png">
 <style>
-@media (display-mode: standalone) {
-  .app, .sheet { bottom: auto; height: var(--kx-h, calc(100vh + env(safe-area-inset-top))); }
-  .top, .sheet-bar { padding-top: env(safe-area-inset-top); }
 }
 #kx-gate{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(6,22,32,.86);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);padding:24px}
 #kx-gate form{width:100%;max-width:320px;background:#fff;color:#123;border-radius:10px;padding:20px 18px;box-shadow:0 8px 30px rgba(0,0,0,.35);font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif}
@@ -3346,22 +3343,6 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 <script src="kx.js"></script>
 <script src="push-config.js?v=2"></script>
 <script src="push.js?v=1"></script>
-<script>
-(function () {
-  var sa =window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
-  if (!sa) return;
-  function fit() {
-    var land = window.matchMedia && matchMedia("(orientation: landscape)").matches;
-    var a = screen.width, b = screen.height;
-    var h = land ? Math.min(a, b) : Math.max(a, b);
-    if (window.innerHeight > h) h = window.innerHeight;
-    document.documentElement.style.setProperty("--kx-h", h + "px");
-  }
-  fit();
-  window.addEventListener("resize", fit);
-  window.addEventListener("orientationchange", function () { setTimeout(fit, 300); });
-})();
-</script>
 
 </head>
 <body>
