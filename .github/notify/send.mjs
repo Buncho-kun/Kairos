@@ -71,6 +71,7 @@ function makeBody() {
   if (!changed.length) return null;
   const msg = git("log", "-1", "--format=%s");
   if (/新着なし/.test(msg)) return null;
+  if (/\[no-notify\]/.test(msg)) return null; // 鍵のかけ直しなど、中身が変わらない更新
   const m = msg.match(/新着\s*(\d+)\s*件/);
   return todayJST() + (m ? " 新着" + m[1] + "件" : " 内容が更新されました");
 }
