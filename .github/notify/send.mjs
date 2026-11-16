@@ -1,5 +1,6 @@
 // データ更新のあと、通知を受け取る設定にした端末へ Web Push を送る。
 // 設定（Secrets）がまだないとき・中身の更新がないときは、何もせずに終わる。
+import crypto from "node:crypto";
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import webpush from "web-push";
@@ -13,6 +14,27 @@ const pub = (cfg.match(/vapidPublicKey\s*:\s*"([^"]*)"/) || [])[1] || "";
 if (!pub || !env.VAPID_PRIVATE_KEY || !env.FIREBASE_SERVICE_ACCOUNT) {
   console.log("通知の設定（Secrets）がまだないので送りません。");
   process.exit(0);
+}
+
+// 貼り付け時に混ざりやすい空白・改行・引用符を取り除き、公開鍵と対になっているか確かめる
+const priv = String(env.VAPID_PRIVATE_KEY).replace(/[\s"'`]/g, "");
+try {
+  const ecdh = crypto.createECDH("prime256v1");
+  ecdh.setPrivateKey(Buffer.from(priv, "base64url"));
+  if (ecdh.getPublicKey().toString("base64url") !== pub) {
+    console.log("VAPID_PRIVATE_KEY が push-config.js の公開鍵と対になっていません。Secrets の値を貼り直してください。");
+    process.exit(1);
+  }
+} catch {
+  console.log(`VAPID_PRIVATE_KEY の形式が正しくありません（${priv.length}文字。正しくは43文字）。Secrets の値を貼り直してください。`);
+  process.exit(1);
+}
+let account;
+try {
+  account = JSON.parse(String(env.FIREBASE_SERVICE_ACCOUNT).trim());
+} catch {
+  console.log("FIREBASE_SERVICE_ACCOUNT が JSON として読めません。ダウンロードしたファイルの中身を { から } まで全部貼り直してください。");
+  process.exit(1);
 }
 
 const git = (...a) => execFileSync("git", a, { encoding: "utf8" }).trim();
@@ -45,8 +67,8 @@ if (!body) {
   process.exit(0);
 }
 
-webpush.setVapidDetails("https://github.com/Buncho-kun", pub, env.VAPID_PRIVATE_KEY);
-initializeApp({ credential: cert(JSON.parse(env.FIREBASE_SERVICE_ACCOUNT)) });
+webpush.setVapidDetails("https://github.com/Buncho-kun", pub, priv);
+initializeApp({ credential: cert(account) });
 const db = getFirestore();
 const snap = await db.collection("kairos_subs").get();
 const payload = JSON.stringify({ title: "Kairos", body });
