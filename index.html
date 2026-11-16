@@ -3549,13 +3549,10 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     loading: true,
     loadNote: "",
     dbState: "pending",
-    uid: null,
-    canEdit: false,
     mmode: null,
     calc: { drug: "apap", wt: "", mg: "", n: "" },
   };
-  let db = null,
-    user = null;
+  let db = null;
   const $ = (id) => document.getElementById(id);
 
   function esc(s) {
@@ -4535,7 +4532,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     }
     if (S.dbState === "none") {
       main.innerHTML =
-        '<div class="notice"><strong>この表示ではデータを読み込めません。</strong><br>claude.ai にサインインした状態で開いてください。</div>';
+        '<div class="notice"><strong>データを読み込めませんでした。</strong><br>通信状況を確認して、開き直してください。</div>';
       return;
     }
     if (S.tab === "manual") {
@@ -4665,7 +4662,6 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     else openItem(t.dataset.open);
   });
 
-  const chains = {};
   const MARKS_LS = "pu-marks";
   function loadLocalMarks() {
     try {
@@ -4680,30 +4676,13 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       localStorage.setItem(MARKS_LS, JSON.stringify(S.marks));
     } catch (e) {}
   }
-  const DENIED = /permission|denied|not[_-]?found|invalid_argument|unauth|forbidden/i;
   function writeMark(id, patch) {
-    const next = Object.assign({}, S.marks[id] || {}, patch);
-    S.marks[id] = next;
+    S.marks[id] = Object.assign({}, S.marks[id] || {}, patch);
     renderNav();
     if (S.openId) renderSheetBar();
     else if (S.tab !== "info" && S.tab !== "tools") renderMain();
-    if (S.localMarks || !db || !S.uid) {
-      saveLocalMarks();
-      return Promise.resolve();
-    }
-    const ref = db.collection("data/users/" + S.uid).doc(id);
-    chains[id] = (chains[id] || Promise.resolve())
-      .then(() => ref.set(next))
-      .catch((err) => {
-        if (DENIED.test(String((err && (err.code || err.message)) || ""))) {
-          S.localMarks = true;
-          saveLocalMarks();
-          return;
-        }
-        S.loadNote = dbErr(err);
-        renderMain();
-      });
-    return chains[id];
+    saveLocalMarks();
+    return Promise.resolve();
   }
   function toggleSave(id) {
     writeMark(id, { saved: !isSaved(id) });
@@ -4765,18 +4744,18 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     $("act-save").textContent = sv ? "★ 保存済み" : "☆ 保存";
     $("act-save").classList.toggle("on", sv);
     $("act-save").setAttribute("aria-pressed", String(sv));
-    $("act-save").disabled = !(db && S.uid);
+    $("act-save").disabled = !db;
     const rb = $("act-read");
     if (rb) {
       rb.textContent = isRead(S.openId) ? "未読に戻す" : "既読にする";
-      rb.disabled = !(db && S.uid);
+      rb.disabled = !db;
     }
   }
   $("act-save").addEventListener("click", () => {
     if (S.openId) toggleSave(S.openId);
   });
   function setTools(kind) {
-    $("memo").hidden = !(kind === "manual" && db && S.uid);
+    $("memo").hidden = !(kind === "manual" && db);
   }
   function linksHTML(links) {
     return (
@@ -6271,7 +6250,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     S.bOpenFlag = f;
     S.bPrevSeen = branchSeen(b) || branchBase();
     openSheet(id, "branch");
-    if (f && db && S.uid) writeMark("b~" + id, { seenAt: new Date().toISOString() });
+    if (f && db) writeMark("b~" + id, { seenAt: new Date().toISOString() });
   }
   function renderBranchSheet() {
     const b = getBranch(S.openId);
@@ -11155,7 +11134,6 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   renderHeader();
   renderNav();
   renderMain();
-  const C = window.claude;
   if (typeof window.kxOpenDb !== "function") {
     S.dbState = "none";
     S.loading = false;
@@ -11195,10 +11173,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       if (Date.now() - t0 > 600) hide();
     });
   })();
-  window.kxOpenDb().then((d) => [d, null], () => [null, null]).then(
-    async ([d, u]) => {
+  window.kxOpenDb().then((d) => d, () => null).then(
+    (d) => {
       db = d;
-      user = u;
       if (!db) {
         S.dbState = "none";
         S.loading = false;
@@ -11207,25 +11184,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         return;
       }
       S.dbState = "ok";
-      if (user) {
-        try {
-          S.uid = await user.id();
-        } catch (e) {
-          S.uid = null;
-        }
-        try {
-          S.canEdit = !!(await user.canEdit());
-        } catch (e) {
-          S.canEdit = false;
-        }
-        try {
-          S.localMarks = (await user.can("data.write")) === false;
-        } catch (e) {
-          S.localMarks = false;
-        }
-      }
-      if (!S.uid) S.localMarks = true;
-      if (S.localMarks) {
+      {
         S.marks = loadLocalMarks();
         if (!S.marks["base~branch"]) {
           S.marks["base~branch"] = { at: new Date().toISOString() };
@@ -11332,25 +11291,6 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
           if (S.tab === "tools") renderTools();
         },
       );
-      if (S.uid && !S.localMarks) {
-        db.collection("data/users/" + S.uid).onSnapshot(
-          (snap) => {
-            const m = {};
-            snap.docs.forEach((x) => {
-              if (x.exists) m[x.id] = x.data();
-            });
-            S.marks = m;
-            if (!snap.metadata.fromCache && !m["base~branch"] && !S.baseWritten) {
-              S.baseWritten = true;
-              writeMark("base~branch", { at: new Date().toISOString() });
-            }
-            renderNav();
-            if (S.openId) renderSheetBar();
-            else if (!quiet()) renderMain();
-          },
-          () => {},
-        );
-      }
     },
   );
 })();

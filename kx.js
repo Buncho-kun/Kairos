@@ -121,7 +121,7 @@
       (d) => ({ ok: true, status: 200, json: async () => d }),
       (e) => ({ ok: false, status: 0, json: async () => { throw e; } }),
     );
-  /* minimal read-only stand-in for the artifact database */
+  /* read-only query interface over the decrypted collections */
   function mkDb(cols) {
     const docObj = (id, d) => ({ id, exists: d !== undefined, data: () => d });
     const snapOf = (a) => ({ docs: a, size: a.length, metadata: { fromCache: false } });
