@@ -33,7 +33,21 @@ let account;
 try {
   account = JSON.parse(String(env.FIREBASE_SERVICE_ACCOUNT).trim());
 } catch {
-  console.log("FIREBASE_SERVICE_ACCOUNT が JSON として読めません。ダウンロードしたファイルの中身を { から } まで全部貼り直してください。");
+  const s = String(env.FIREBASE_SERVICE_ACCOUNT).trim();
+  const hint = [
+    `${s.length}文字`,
+    `先頭が { ${s.startsWith("{") ? "○" : "×"}`,
+    `末尾が } ${s.endsWith("}") ? "○" : "×"}`,
+    `private_key を含む ${s.includes("private_key") ? "○" : "×"}`,
+    s.includes("apiKey") ? "Web用の設定（apiKey）が貼られているようです" : "",
+  ]
+    .filter(Boolean)
+    .join("・");
+  console.log(`FIREBASE_SERVICE_ACCOUNT が JSON として読めません（${hint}）。サービスアカウントの JSON ファイルの中身を { から } まで全部貼り直してください。`);
+  process.exit(1);
+}
+if (account.type !== "service_account" || !account.private_key) {
+  console.log("FIREBASE_SERVICE_ACCOUNT がサービスアカウントの鍵ではありません。「プロジェクトの設定」→「サービスアカウント」→「新しい秘密鍵の生成」で出るファイルの中身を貼ってください。");
   process.exit(1);
 }
 
