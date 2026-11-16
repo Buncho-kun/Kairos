@@ -3333,7 +3333,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 <link rel="icon" href="img/icon-192.png">
 <style>
 @media (display-mode: standalone) {
-  .app, .sheet { bottom: auto; height: 100vh; }
+  .app, .sheet { bottom: auto; height: var(--kx-h, calc(100vh + env(safe-area-inset-top))); }
   .top, .sheet-bar { padding-top: env(safe-area-inset-top); }
 }
 #kx-gate{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(6,22,32,.86);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);padding:24px}
@@ -3344,6 +3344,23 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 #kx-gate .kx-e{min-height:1.2em;margin:10px 0 0;font-size:13px;color:#a33}
 </style>
 <script src="kx.js"></script>
+<script>
+(function () {
+  var sa = window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+  if (!sa) return;
+  function fit() {
+    var land = window.matchMedia && matchMedia("(orientation: landscape)").matches;
+    var a = screen.width, b = screen.height;
+    var h = land ? Math.min(a, b) : Math.max(a, b);
+    if (window.innerHeight > h) h = window.innerHeight;
+    document.documentElement.style.setProperty("--kx-h", h + "px");
+  }
+  fit();
+  window.addEventListener("resize", fit);
+  window.addEventListener("orientationchange", function () { setTimeout(fit, 300); });
+})();
+</script>
+
 </head>
 <body>
 <div id="splash" aria-hidden="true"><picture><source media="(prefers-color-scheme: light)" srcset="img/splash-bg-light.jpg?v=7"><img class="sp-bg" src="img/splash-bg-dark.jpg?v=7" alt=""></picture><picture><source media="(prefers-color-scheme: light)" srcset="img/splash-logo-light.jpg?v=7"><img class="sp-logo" src="img/splash-logo-dark.jpg?v=7" alt=""></picture></div>
