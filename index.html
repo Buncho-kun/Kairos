@@ -3344,9 +3344,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 #kx-gate .kx-e{min-height:1.2em;margin:10px 0 0;font-size:13px;color:#a33}
 </style>
 <script src="kx.js"></script>
+<script src="push-config.js?v=1"></script>
+<script src="push.js?v=1"></script>
 <script>
 (function () {
-  var sa = window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+  var sa =window.navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
   if (!sa) return;
   function fit() {
     var land = window.matchMedia && matchMedia("(orientation: landscape)").matches;
@@ -4038,7 +4040,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       return;
     }
     if (!m || !m.lastRun) {
-      $("run").textContent = "自動収集：毎朝6:48ごろ";
+      $("run").textContent = "自動収集：毎朝7時ごろ";
       return;
     }
     $("run").textContent = "収集 " + fmtTime(m.lastRun);
@@ -6638,6 +6640,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
           "</button>",
       ).join("") +
       "</div></div></section>";
+    if (window.KairosPush) h += window.KairosPush.html();
     h += '<section class="panel"><h2>自動収集</h2><div class="pb">';
     h +=
       '<dl class="facts"><dt>最終収集</dt><dd class="mono">' +
@@ -6646,7 +6649,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     if (m.lastResult) h += "<dt>結果</dt><dd>" + esc(m.lastResult) + "</dd>";
     h += "</dl></div>";
     let det =
-      '<p class="note">毎朝6:48ごろに新しい情報を集め、新着があれば通知します。条件を変えたいときはClaudeに頼んでください。</p>' +
+      '<p class="note">毎朝7時ごろに新しい情報を集めます。条件を変えたいときはClaudeに頼んでください。</p>' +
       '<dl class="facts"><dt>収録</dt><dd>' +
       (S.allLoaded ? "" : "直近" + LIVE_DAYS + "日に追加した ") +
       S.items.length +
@@ -6771,6 +6774,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return h;
   }
   function bindInfo() {
+    if (window.KairosPush) window.KairosPush.bind();
     document.querySelectorAll("[data-theme-set]").forEach((b) =>
       b.addEventListener("click", () => {
         S.theme = b.dataset.themeSet;

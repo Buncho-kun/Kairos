@@ -1,0 +1,42 @@
+name: 通知
+
+on:
+  push:
+    branches: [main]
+    paths: ["data/**"]
+  workflow_dispatch:
+    inputs:
+      body:
+        description: 通知の本文
+        required: false
+        default: テスト通知です
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 準備
+        working-directory: .github/notify
+        run: npm install --no-audit --no-fund
+      - name: 送信
+        run: node .github/notify/send.mjs
+        env:
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          MANUAL_BODY: ${{ github.event.inputs.body }}
