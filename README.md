@@ -1,2 +1,1 @@
 # Kairos
-Psychiatry app
