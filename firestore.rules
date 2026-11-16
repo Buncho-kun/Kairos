@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 通知の購読（端末が自分で登録する。読み出しと削除は送信ジョブだけ）
+    match /kairos_subs/{id} {
+      allow create: if true;
+    }
+
+    // アクセスコードごとの登録端末（1コード3台まで）
+    match /kx_slots/{cid} {
+      allow get: if request.auth != null;
+      allow update: if request.auth != null && slotChange();
+    }
+
+    // コードごとのデータ鍵（登録された端末だけが読める）
+    match /kx_keys/{cid} {
+      allow get: if request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/kx_slots/$(cid)).data.devices;
+    }
+
+    function slotChange() {
+      let me = request.auth.uid;
+      let before = resource.data.devices;
+      let after = request.resource.data.devices;
+      let d = after.diff(before);
+      let top = request.resource.data.diff(resource.data).affectedKeys();
+      let sameSwap = request.resource.data.swapAt == resource.data.swapAt;
+      return top.hasOnly(['devices', 'swapAt']) && (
+        // 使ったことを記録する
+        (sameSwap && d.addedKeys().size() == 0 && d.removedKeys().size() == 0
+          && d.changedKeys().hasOnly([me]) && me in before)
+        // 空きがあれば登録する
+        || (sameSwap && d.addedKeys().hasOnly([me]) && d.removedKeys().size() == 0
+          && d.changedKeys().size() == 0 && after.size() <= 3)
+        // この端末の登録を外す
+        || (sameSwap && d.removedKeys().hasOnly([me]) && d.addedKeys().size() == 0
+          && d.changedKeys().size() == 0)
+        // 3台で埋まっているとき、30日に1回だけ1台と入れ替える（機種変更）
+        || (d.addedKeys().hasOnly([me]) && d.removedKeys().size() == 1
+          && d.changedKeys().size() == 0 && before.size() == 3
+          && request.time > resource.data.swapAt + duration.value(30, 'd')
+          && request.resource.data.swapAt == request.time)
+      );
+    }
+  }
+}

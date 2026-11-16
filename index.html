@@ -3339,7 +3339,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 #kx-gate button{margin-top:12px;width:100%;font-size:15px;padding:10px;border:0;border-radius:6px;background:#0b4f6c;color:#fff}
 #kx-gate .kx-e{min-height:1.2em;margin:10px 0 0;font-size:13px;color:#a33}
 </style>
-<script src="kx.js"></script>
+<script src="kx.js?v=2"></script>
 <script src="push-config.js?v=2"></script>
 <script src="push.js?v=1"></script>
 
@@ -6600,6 +6600,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       ).join("") +
       "</div></div></section>";
     if (window.KairosPush) h += window.KairosPush.html();
+    if (window.KairosDevice) h += window.KairosDevice.html();
     h += '<section class="panel"><h2>自動収集</h2><div class="pb">';
     h +=
       '<dl class="facts"><dt>最終収集</dt><dd class="mono">' +
@@ -6734,6 +6735,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   }
   function bindInfo() {
     if (window.KairosPush) window.KairosPush.bind();
+    if (window.KairosDevice) window.KairosDevice.bind();
     document.querySelectorAll("[data-theme-set]").forEach((b) =>
       b.addEventListener("click", () => {
         S.theme = b.dataset.themeSet;

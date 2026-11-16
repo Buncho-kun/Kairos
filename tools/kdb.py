@@ -21,6 +21,13 @@ Access codes (one per person). KAIROS_PASS must be the owner passphrase:
   python3 tools/kdb.py addcode LABEL        issue a new code for LABEL
   python3 tools/kdb.py rmcode N             revoke code N and re-encrypt everything
   python3 tools/kdb.py rotate               re-encrypt everything with a new data key
+  python3 tools/kdb.py resetcode N          clear the devices registered for code N
+  python3 tools/kdb.py label N TEXT         set the private label of code N
+  python3 tools/kdb.py slots                JSON used by the device-limit sync job
+
+Each code works on at most 3 devices. The keys for codes live in Firestore
+(kx_keys / kx_slots), synced by .github/workflows/codes.yml; only the owner
+entry is kept in k.json.
 
 Collections: items, branches, journals, manuals, watch, tools, meta.
 """
@@ -199,11 +206,45 @@ def cmd_addcode(label="", count="1"):
         n = max([c["n"] for c in lst] + [meta.get("next", 1) - 1]) + 1
         meta["next"] = n + 1
         code = new_code()
-        lst.append({"n": n, "label": label, "code": code})
-        meta["wraps"].append({"n": n, "w": wrap(derive(meta, norm_code(code)), key())})
+        lst.append({"n": n, "label": label, "code": code,
+                    "w": wrap(derive(meta, norm_code(code)), key())})
         print("%d  %s  %s" % (n, label, code))
     save_codes(lst)
     write_meta(meta)
+
+
+def code_id(code):
+    return hashlib.sha256(("kairos-code:" + norm_code(code)).encode()).hexdigest()[:40]
+
+
+def cmd_resetcode(n):
+    import datetime
+    n = int(n)
+    lst = owner_codes()
+    hit = [c for c in lst if c["n"] == n and n != 0]
+    if not hit:
+        die("no such code: %d" % n)
+    hit[0]["resetAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    save_codes(lst)
+    print("reset requested for", n)
+
+
+def cmd_label(n, label):
+    lst = owner_codes()
+    for c in lst:
+        if c["n"] == int(n):
+            c["label"] = label
+    save_codes(lst)
+
+
+def cmd_slots():
+    """JSON for the device-limit sync job: one entry per access code."""
+    out = []
+    for c in owner_codes():
+        if c["n"] == 0 or not c.get("w"):
+            continue
+        out.append({"n": c["n"], "cid": code_id(c["code"]), "w": c["w"], "resetAt": c.get("resetAt", "")})
+    print(json.dumps(out))
 
 
 def all_enc_files():
@@ -221,11 +262,12 @@ def cmd_rotate():
         raw = dec_bytes(open(f, "rb").read(), old)
         open(f, "wb").write(enc_bytes(raw, dk))
     meta["check"] = base64.b64encode(enc_bytes(b'"ok"', dk)).decode()
-    meta["wraps"] = [
-        {"n": c["n"], "w": wrap(kek() if c["n"] == 0 else derive(meta, norm_code(c["code"])), dk)}
-        for c in lst
-    ]
+    meta["wraps"] = [{"n": 0, "w": wrap(kek(), dk)}]
+    for c in lst:
+        if c["n"] != 0:
+            c["w"] = wrap(derive(meta, norm_code(c["code"])), dk)
     write_meta(meta)
+    save_codes(lst)
     global _key
     _key = dk
     print("rotated: %d files, %d codes" % (len(all_enc_files()), len(lst)))
@@ -326,7 +368,8 @@ def main(argv):
         "init": cmd_init, "open": cmd_open, "seal": cmd_seal, "ids": cmd_ids,
         "list": cmd_list, "get": cmd_get, "put": cmd_put, "del": cmd_del,
         "enc": cmd_enc, "dec": cmd_dec, "codes": cmd_codes, "addcode": cmd_addcode,
-        "rmcode": cmd_rmcode, "rotate": cmd_rotate,
+        "rmcode": cmd_rmcode, "rotate": cmd_rotate, "resetcode": cmd_resetcode,
+        "label": cmd_label, "slots": cmd_slots,
     }.get(cmd)
     if not fn:
         die(__doc__)

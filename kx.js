@@ -53,7 +53,148 @@
     throw new Error("no match");
   }
   const normCode = (c) => c.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  function gate(meta, resolve) {
+  const LS_MODE = "kx-mode"; // "owner" | "code:<cid>"
+  const LS_AUTH = "kx-auth";
+  const lsGet = (k) => {
+    try {
+      return localStorage.getItem(k);
+    } catch (x) {
+      return null;
+    }
+  };
+  const lsSet = (k, v) => {
+    try {
+      if (v == null) localStorage.removeItem(k);
+      else localStorage.setItem(k, v);
+    } catch (x) {}
+  };
+  const hex = (buf) =>
+    Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  const codeId = async (code) =>
+    hex(await crypto.subtle.digest("SHA-256", ENC.encode("kairos-code:" + normCode(code)))).slice(0, 40);
+
+  /* ---- Firebase (anonymous sign-in + Firestore REST) for the 3-device limit ---- */
+  const FB = () => window.KAIROS_PUSH || {};
+  let tok = null;
+  async function idToken() {
+    if (tok && tok.exp > Date.now() + 60e3) return tok;
+    const key = FB().firebaseApiKey;
+    if (!key) throw new Error("設定が読み込めません");
+    let a = null;
+    try {
+      a = JSON.parse(lsGet(LS_AUTH) || "null");
+    } catch (x) {}
+    let r, j;
+    if (a && a.refresh) {
+      r = await fetch("https://securetoken.googleapis.com/v1/token?key=" + key, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(a.refresh),
+      });
+      j = await r.json();
+      if (r.ok) {
+        tok = { id: j.id_token, uid: j.user_id, exp: Date.now() + (+j.expires_in || 3600) * 1000 };
+        lsSet(LS_AUTH, JSON.stringify({ uid: j.user_id, refresh: j.refresh_token }));
+        return tok;
+      }
+    }
+    r = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + key, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ returnSecureToken: true }),
+    });
+    j = await r.json();
+    if (!r.ok) throw new Error("端末の確認に失敗しました（" + r.status + "）");
+    tok = { id: j.idToken, uid: j.localId, exp: Date.now() + (+j.expiresIn || 3600) * 1000 };
+    lsSet(LS_AUTH, JSON.stringify({ uid: j.localId, refresh: j.refreshToken }));
+    return tok;
+  }
+  const fsBase = () =>
+    "https://firestore.googleapis.com/v1/projects/" + FB().firebaseProjectId + "/databases/(default)/documents";
+  const docName = (path) =>
+    "projects/" + FB().firebaseProjectId + "/databases/(default)/documents/" + path;
+  async function fsGet(path) {
+    const t = await idToken();
+    const r = await fetch(fsBase() + "/" + path, { headers: { Authorization: "Bearer " + t.id }, cache: "no-store" });
+    if (r.status === 403 || r.status === 404) return { status: r.status };
+    if (!r.ok) throw new Error("通信に失敗しました（" + r.status + "）");
+    return { status: 200, doc: await r.json() };
+  }
+  async function fsWrite(path, mask, transforms) {
+    const t = await idToken();
+    const r = await fetch(fsBase() + ":commit", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + t.id, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        writes: [
+          {
+            update: { name: docName(path), fields: {} },
+            updateMask: { fieldPaths: mask },
+            updateTransforms: transforms.map((f) => ({ fieldPath: f, setToServerValue: "REQUEST_TIME" })),
+            currentDocument: { exists: true },
+          },
+        ],
+      }),
+    });
+    return r.ok;
+  }
+  const dev = (uid) => "devices.`" + uid + "`";
+  function slotInfo(doc) {
+    const f = (doc && doc.fields) || {};
+    const m = (f.devices && f.devices.mapValue && f.devices.mapValue.fields) || {};
+    const devices = Object.keys(m).map((u) => ({ uid: u, at: Date.parse(m[u].timestampValue || 0) || 0 }));
+    const swapAt = Date.parse((f.swapAt && f.swapAt.timestampValue) || 0) || 0;
+    return { devices, swapAt };
+  }
+  class GateError extends Error {}
+  /* returns the AES key for a code, registering this device if there is room */
+  async function keyForCode(code, meta, allowJoin) {
+    const kek = await derive(normCode(code), meta);
+    const cid = await codeId(code);
+    const read = async () => {
+      const r = await fsGet("kx_keys/" + cid);
+      if (r.status !== 200) return null;
+      const w = r.doc.fields.w.stringValue;
+      return openWith(kek, { wraps: [{ w }], check: meta.check });
+    };
+    let k = await read();
+    if (k) return { k, cid };
+    if (!allowJoin) throw new GateError("この端末の登録が外れています。コードを入れ直してください。");
+    const s = await fsGet("kx_slots/" + cid);
+    if (s.status !== 200) throw new GateError("コードが違うか、無効になっています");
+    const info = slotInfo(s.doc);
+    const me = (await idToken()).uid;
+    let ok = false;
+    if (info.devices.some((d) => d.uid === me)) ok = true;
+    else if (info.devices.length < 3) ok = await fsWrite("kx_slots/" + cid, [], [dev(me)]);
+    else {
+      const next = info.swapAt + 30 * 864e5;
+      if (Date.now() < next) {
+        const d = new Date(next);
+        throw new GateError(
+          "このコードはすでに3台で使われています。入れ替えは " +
+            (d.getMonth() + 1) + "月" + d.getDate() + "日以降にできます。急ぐときは管理者に連絡してください。",
+        );
+      }
+      const old = info.devices.slice().sort((a, b) => a.at - b.at)[0];
+      if (!window.confirm("このコードはすでに3台で使われています。いちばん長く使われていない端末の登録を外して、この端末を登録しますか？（入れ替えは30日に1回まで）"))
+        throw new GateError("登録をやめました");
+      ok = await fsWrite("kx_slots/" + cid, [dev(old.uid)], [dev(me), "swapAt"]);
+    }
+    if (!ok) throw new GateError("端末を登録できませんでした。時間をおいて試してください。");
+    k = await read();
+    if (!k) throw new GateError("コードが違うか、無効になっています");
+    return { k, cid };
+  }
+  /* owner passphrase: wraps in k.json */
+  async function keyForOwner(pass, meta) {
+    const kek = await derive(pass, meta);
+    return { k: await openWith(kek, meta), kek };
+  }
+
+  function gate(meta, resolve, note) {
     const w = document.createElement("div");
     w.id = "kx-gate";
     w.innerHTML =
@@ -65,50 +206,105 @@
     const inp = w.querySelector("input");
     const err = w.querySelector(".kx-e");
     const btn = w.querySelector("button");
+    if (note) err.textContent = note;
     setTimeout(() => inp.focus(), 50);
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (!inp.value) return;
+      const v = inp.value.trim();
+      if (!v) return;
       btn.disabled = true;
       err.textContent = "確認しています…";
       try {
-        const v = inp.value.trim();
-        const cands = [v];
-        if (normCode(v) !== v) cands.push(normCode(v));
-        let k = null,
-          raw = null;
-        for (const c of cands) {
-          try {
-            raw = await derive(c, meta);
-            k = await openWith(raw, meta);
-            break;
-          } catch (x) {}
-        }
-        if (!k) throw new Error("no match");
+        let k = null;
         try {
-          localStorage.setItem(LS_KEY, b64e(raw));
-          localStorage.setItem(LS_SALT, meta.salt);
+          const o = await keyForOwner(v, meta);
+          k = o.k;
+          lsSet(LS_MODE, "owner");
+          lsSet(LS_KEY, b64e(o.kek));
         } catch (x) {}
+        if (!k) {
+          const c = await keyForCode(v, meta, true);
+          k = c.k;
+          lsSet(LS_MODE, "code:" + c.cid);
+          lsSet(LS_KEY, b64e(await derive(normCode(v), meta)));
+        }
+        lsSet(LS_SALT, meta.salt);
         w.remove();
         resolve(k);
       } catch (x) {
-        err.textContent = "コードが違うか、無効になっています";
+        err.textContent = x instanceof GateError ? x.message : "確認できませんでした（" + (x && x.message) + "）";
         btn.disabled = false;
         inp.select();
       }
     });
   }
+  async function reopen(meta) {
+    const mode = lsGet(LS_MODE) || "";
+    const raw = lsGet(LS_KEY);
+    if (!raw || lsGet(LS_SALT) !== meta.salt) return null;
+    const kek = b64d(raw);
+    if (mode === "owner" || !mode) return openWith(kek, meta);
+    const cid = mode.slice(5);
+    const r = await fsGet("kx_keys/" + cid);
+    if (r.status !== 200) throw new GateError("この端末の登録が外れました。コードを入れ直してください。");
+    const k = await openWith(kek, { wraps: [{ w: r.doc.fields.w.stringValue }], check: meta.check });
+    const me = (await idToken()).uid;
+    fsWrite("kx_slots/" + cid, [], [dev(me)]).catch(() => {});
+    return k;
+  }
   function getKey() {
     return (keyP =
       keyP ||
       getMeta().then(async (meta) => {
+        let note = "";
         try {
-          const raw = localStorage.getItem(LS_KEY);
-          if (raw && localStorage.getItem(LS_SALT) === meta.salt) return await openWith(b64d(raw), meta);
-        } catch (x) {}
-        return new Promise((res) => gate(meta, res));
+          const k = await reopen(meta);
+          if (k) return k;
+        } catch (x) {
+          if (x instanceof GateError) {
+            note = x.message;
+            lsSet(LS_MODE, null);
+            lsSet(LS_KEY, null);
+          } else note = "";
+        }
+        return new Promise((res) => gate(meta, res, note));
       }));
   }
+
+  /* settings panel: this device's registration */
+  window.KairosDevice = {
+    html() {
+      const mode = lsGet(LS_MODE) || "";
+      if (!mode.startsWith("code:")) return "";
+      return (
+        '<section class="panel" id="kx-dev"><h2>この端末</h2><div class="pb">' +
+        '<p class="note">1つのコードで使える端末は3台までです。機種変更などで使わなくなる端末は、ここで登録を外してください。</p>' +
+        '<div class="pills"><button type="button" id="kx-dev-leave">この端末の登録を外す</button></div>' +
+        '<p class="note" id="kx-dev-msg"></p></div></section>'
+      );
+    },
+    bind() {
+      const b = document.getElementById("kx-dev-leave");
+      if (!b) return;
+      b.onclick = async () => {
+        if (!window.confirm("この端末の登録を外します。次に開くときはコードの入力が必要です。よろしいですか？")) return;
+        b.disabled = true;
+        const msg = document.getElementById("kx-dev-msg");
+        try {
+          const cid = (lsGet(LS_MODE) || "").slice(5);
+          const me = (await idToken()).uid;
+          const ok = await fsWrite("kx_slots/" + cid, [dev(me)], []);
+          if (!ok) throw new Error("x");
+          lsSet(LS_MODE, null);
+          lsSet(LS_KEY, null);
+          location.reload();
+        } catch (x) {
+          if (msg) msg.textContent = "外せませんでした。通信状況を確認してください。";
+          b.disabled = false;
+        }
+      };
+    },
+  };
   async function fetchDec(path) {
     const k = await getKey();
     const r = await fetch(path, { cache: "no-cache" });
