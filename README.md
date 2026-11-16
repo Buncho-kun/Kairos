@@ -1,2 +1,2 @@
-# Kaitos
+# Kairos
 Psychiatry app
