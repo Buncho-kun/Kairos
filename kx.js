@@ -1,7 +1,7 @@
 /* Kairos: encrypted data loader for the GitHub Pages version. */
 (function () {
   const ENC = new TextEncoder();
-  const LS_KEY = "kx-key";
+  const LS_KEY = "kx-kek";
   const LS_SALT = "kx-salt";
   const b64d = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   const b64e = (u) => {
@@ -37,16 +37,27 @@
     const s = new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"));
     return new Response(s).text();
   }
-  async function tryRaw(raw, meta) {
-    const k = await imp(raw);
-    await decBuf(k, b64d(meta.check).buffer);
-    return k;
+  const impWrap = (raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  /* kek: raw bytes derived from a person's code; returns the data key or throws */
+  async function openWith(kekRaw, meta) {
+    const kk = await impWrap(kekRaw);
+    for (const w of meta.wraps || []) {
+      try {
+        const b = b64d(w.w);
+        const dk = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, kk, b.slice(12));
+        const k = await imp(new Uint8Array(dk));
+        await decBuf(k, b64d(meta.check).buffer);
+        return k;
+      } catch (x) {}
+    }
+    throw new Error("no match");
   }
+  const normCode = (c) => c.toUpperCase().replace(/[^A-Z0-9]/g, "");
   function gate(meta, resolve) {
     const w = document.createElement("div");
     w.id = "kx-gate";
     w.innerHTML =
-      '<form><p class="kx-t">合言葉を入力してください</p>' +
+      '<form><p class="kx-t">アクセスコードを入力してください</p>' +
       '<input type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false">' +
       '<button type="submit">開く</button><p class="kx-e" role="alert"></p></form>';
     document.body.appendChild(w);
@@ -61,8 +72,19 @@
       btn.disabled = true;
       err.textContent = "確認しています…";
       try {
-        const raw = await derive(inp.value, meta);
-        const k = await tryRaw(raw, meta);
+        const v = inp.value.trim();
+        const cands = [v];
+        if (normCode(v) !== v) cands.push(normCode(v));
+        let k = null,
+          raw = null;
+        for (const c of cands) {
+          try {
+            raw = await derive(c, meta);
+            k = await openWith(raw, meta);
+            break;
+          } catch (x) {}
+        }
+        if (!k) throw new Error("no match");
         try {
           localStorage.setItem(LS_KEY, b64e(raw));
           localStorage.setItem(LS_SALT, meta.salt);
@@ -70,7 +92,7 @@
         w.remove();
         resolve(k);
       } catch (x) {
-        err.textContent = "合言葉が違います";
+        err.textContent = "コードが違うか、無効になっています";
         btn.disabled = false;
         inp.select();
       }
@@ -82,7 +104,7 @@
       getMeta().then(async (meta) => {
         try {
           const raw = localStorage.getItem(LS_KEY);
-          if (raw && localStorage.getItem(LS_SALT) === meta.salt) return await tryRaw(b64d(raw), meta);
+          if (raw && localStorage.getItem(LS_SALT) === meta.salt) return await openWith(b64d(raw), meta);
         } catch (x) {}
         return new Promise((res) => gate(meta, res));
       }));

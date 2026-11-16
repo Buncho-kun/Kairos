@@ -16,9 +16,15 @@ Plain files live in .plain/ (ignored by git) and are never committed.
   python3 tools/kdb.py dec SRC              decrypt any .enc file to stdout
   python3 tools/kdb.py init                 create k.json (only once)
 
+Access codes (one per person). KAIROS_PASS must be the owner passphrase:
+  python3 tools/kdb.py codes                list codes (number, label, code)
+  python3 tools/kdb.py addcode LABEL        issue a new code for LABEL
+  python3 tools/kdb.py rmcode N             revoke code N and re-encrypt everything
+  python3 tools/kdb.py rotate               re-encrypt everything with a new data key
+
 Collections: items, branches, journals, manuals, watch, tools, meta.
 """
-import base64, gzip, hashlib, json, os, sys
+import base64, gzip, hashlib, json, os, secrets, sys
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -30,6 +36,8 @@ PLAIN = os.path.join(ROOT, ".plain")
 KFILE = os.path.join(ROOT, "k.json")
 COLLS = ["items", "branches", "journals", "manuals", "watch", "tools", "meta"]
 MAGIC = b"KX1"
+CODES = os.path.join(DATA, "codes.enc")
+ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ITER = 310000
 
 
@@ -45,32 +53,87 @@ def passphrase():
     return p
 
 
-def derive(meta):
+def derive(meta, secret=None):
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=base64.b64decode(meta["salt"]),
         iterations=meta["iter"],
     )
-    return kdf.derive(passphrase().encode("utf-8"))
+    return kdf.derive((secret if secret is not None else passphrase()).encode("utf-8"))
+
+
+def norm_code(c):
+    return "".join(ch for ch in c.upper() if ch.isalnum())
+
+
+def wrap(kek, dk):
+    iv = os.urandom(12)
+    return base64.b64encode(iv + AESGCM(kek).encrypt(iv, dk, None)).decode()
+
+
+def unwrap(kek, w):
+    b = base64.b64decode(w)
+    return AESGCM(kek).decrypt(b[:12], b[12:], None)
+
+
+def read_meta():
+    if not os.path.exists(KFILE):
+        die("k.json not found; run init")
+    return json.load(open(KFILE))
 
 
 _key = None
+_kek = None
+
+
+def kek():
+    global _kek
+    if _kek is None:
+        _kek = derive(read_meta())
+    return _kek
 
 
 def key():
     global _key
     if _key is None:
-        if not os.path.exists(KFILE):
-            die("k.json not found; run init")
-        meta = json.load(open(KFILE))
-        k = derive(meta)
-        try:
-            dec_bytes(base64.b64decode(meta["check"]), k)
-        except Exception:
+        meta = read_meta()
+        global _kek
+        cands = [kek()]
+        if norm_code(passphrase()) != passphrase():
+            cands.append(derive(meta, norm_code(passphrase())))
+        for k in cands:
+            for w in meta["wraps"]:
+                try:
+                    dk = unwrap(k, w["w"])
+                    dec_bytes(base64.b64decode(meta["check"]), dk)
+                    _key, _kek = dk, k
+                    break
+                except Exception:
+                    continue
+            if _key is not None:
+                break
+        if _key is None:
             die("wrong passphrase")
-        _key = k
     return _key
+
+
+def owner_codes():
+    key()
+    if not os.path.exists(CODES):
+        return []
+    try:
+        return json.loads(dec_bytes(open(CODES, "rb").read(), kek()))
+    except Exception:
+        die("the code list opens only with the owner passphrase")
+
+
+def save_codes(lst):
+    open(CODES, "wb").write(enc_bytes(dumps(lst), kek()))
+
+
+def write_meta(meta):
+    json.dump(meta, open(KFILE, "w"), indent=1)
 
 
 def enc_bytes(raw, k=None):
@@ -107,11 +170,75 @@ def save(c, obj):
 def cmd_init():
     if os.path.exists(KFILE):
         die("k.json already exists")
-    meta = {"v": 1, "iter": ITER, "salt": base64.b64encode(os.urandom(16)).decode()}
-    k = derive(meta)
-    meta["check"] = base64.b64encode(enc_bytes(b'"ok"', k)).decode()
-    json.dump(meta, open(KFILE, "w"), indent=1)
+    meta = {"v": 2, "iter": ITER, "salt": base64.b64encode(os.urandom(16)).decode()}
+    dk = os.urandom(32)
+    meta["check"] = base64.b64encode(enc_bytes(b'"ok"', dk)).decode()
+    meta["wraps"] = [{"n": 0, "w": wrap(derive(meta), dk)}]
+    write_meta(meta)
+    os.makedirs(DATA, exist_ok=True)
+    global _key
+    _key = dk
+    save_codes([{"n": 0, "label": "owner", "code": None}])
     print("k.json created")
+
+
+def new_code():
+    raw = "".join(secrets.choice(ALPH) for _ in range(16))
+    return "-".join(raw[i:i + 4] for i in range(0, 16, 4))
+
+
+def cmd_codes():
+    for c in owner_codes():
+        print("%3d  %-20s %s" % (c["n"], c.get("label", ""), c.get("code") or "(owner passphrase)"))
+
+
+def cmd_addcode(label="", count="1"):
+    lst = owner_codes()
+    meta = read_meta()
+    for _ in range(int(count)):
+        n = max([c["n"] for c in lst] + [meta.get("next", 1) - 1]) + 1
+        meta["next"] = n + 1
+        code = new_code()
+        lst.append({"n": n, "label": label, "code": code})
+        meta["wraps"].append({"n": n, "w": wrap(derive(meta, norm_code(code)), key())})
+        print("%d  %s  %s" % (n, label, code))
+    save_codes(lst)
+    write_meta(meta)
+
+
+def all_enc_files():
+    return sorted(
+        os.path.join(DATA, f) for f in os.listdir(DATA) if f.endswith(".enc") and f != "codes.enc"
+    )
+
+
+def cmd_rotate():
+    lst = owner_codes()
+    old = key()
+    meta = read_meta()
+    dk = os.urandom(32)
+    for f in all_enc_files():
+        raw = dec_bytes(open(f, "rb").read(), old)
+        open(f, "wb").write(enc_bytes(raw, dk))
+    meta["check"] = base64.b64encode(enc_bytes(b'"ok"', dk)).decode()
+    meta["wraps"] = [
+        {"n": c["n"], "w": wrap(kek() if c["n"] == 0 else derive(meta, norm_code(c["code"])), dk)}
+        for c in lst
+    ]
+    write_meta(meta)
+    global _key
+    _key = dk
+    print("rotated: %d files, %d codes" % (len(all_enc_files()), len(lst)))
+
+
+def cmd_rmcode(n):
+    n = int(n)
+    if n == 0:
+        die("the owner entry cannot be removed")
+    lst = [c for c in owner_codes() if c["n"] != n]
+    save_codes(lst)
+    cmd_rotate()
+    print("revoked", n)
 
 
 def cmd_open():
@@ -198,7 +325,8 @@ def main(argv):
     fn = {
         "init": cmd_init, "open": cmd_open, "seal": cmd_seal, "ids": cmd_ids,
         "list": cmd_list, "get": cmd_get, "put": cmd_put, "del": cmd_del,
-        "enc": cmd_enc, "dec": cmd_dec,
+        "enc": cmd_enc, "dec": cmd_dec, "codes": cmd_codes, "addcode": cmd_addcode,
+        "rmcode": cmd_rmcode, "rotate": cmd_rotate,
     }.get(cmd)
     if not fn:
         die(__doc__)
