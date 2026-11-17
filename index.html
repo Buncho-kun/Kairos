@@ -3323,11 +3323,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 </style>
 <meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#0b2a3a">
+<meta name="theme-color" content="#04192a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Kairos">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="icon" href="img/icon-192.png">
@@ -3339,7 +3339,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 #kx-gate button{margin-top:12px;width:100%;font-size:15px;padding:10px;border:0;border-radius:6px;background:#0b4f6c;color:#fff}
 #kx-gate .kx-e{min-height:1.2em;margin:10px 0 0;font-size:13px;color:#a33}
 </style>
-<script src="kx.js?v=2"></script>
+<script src="kx.js?v=3"></script>
 <script src="push-config.js?v=2"></script>
 <script src="push.js?v=1"></script>
 
@@ -3355,6 +3355,22 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   document.querySelectorAll("#splash source").forEach(function (x) { x.remove(); });
   document.querySelector("#splash .sp-bg").src = "img/splash-bg-" + t + ".jpg?v=7";
   document.querySelector("#splash .sp-logo").src = "img/splash-logo-" + t + ".jpg?v=7";
+})();
+</script>
+<script>
+(function () {
+  function fit() {
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (!m) return;
+    var c = getComputedStyle(document.documentElement).getPropertyValue("--paper").trim();
+    if (c) m.setAttribute("content", c);
+  }
+  fit();
+  new MutationObserver(fit).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (window.matchMedia) {
+    var q = matchMedia("(prefers-color-scheme: dark)");
+    if (q.addEventListener) q.addEventListener("change", fit);
+  }
 })();
 </script>
 <div class="app" id="app">
@@ -4675,6 +4691,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     try {
       localStorage.setItem(MARKS_LS, JSON.stringify(S.marks));
     } catch (e) {}
+    if (window.KairosSync) window.KairosSync.push(S.marks);
   }
   function writeMark(id, patch) {
     S.marks[id] = Object.assign({}, S.marks[id] || {}, patch);
@@ -11192,6 +11209,17 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
           S.marks["base~branch"] = { at: new Date().toISOString() };
           saveLocalMarks();
         }
+        if (window.KairosSync)
+          window.KairosSync.pull(S.marks).then((m) => {
+            if (!m) return;
+            S.marks = m;
+            try {
+              localStorage.setItem(MARKS_LS, JSON.stringify(S.marks));
+            } catch (e) {}
+            renderNav();
+            if (S.openId) renderSheetBar();
+            else renderMain();
+          });
       }
       const refresh = (kind) => {
         if (S.openId && (!kind || S.openKind === kind || kind === "any")) renderSheet();

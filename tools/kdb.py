@@ -240,6 +240,11 @@ def cmd_label(n, label):
 def cmd_slots():
     """JSON for the device-limit sync job: one entry per access code."""
     out = []
+    meta = read_meta()
+    own = [w for w in meta["wraps"] if w["n"] == 0]
+    if own:
+        oid = hashlib.sha256(("kairos-owner:" + base64.b64encode(kek()).decode()).encode()).hexdigest()[:40]
+        out.append({"n": 0, "cid": oid, "w": own[0]["w"], "resetAt": ""})
     for c in owner_codes():
         if c["n"] == 0 or not c.get("w"):
             continue

@@ -20,6 +20,16 @@ service cloud.firestore {
         && request.auth.uid in get(/databases/$(database)/documents/kx_slots/$(cid)).data.devices;
     }
 
+    // ★保存・メモ（端末で暗号化した塊。登録された端末だけが読み書きできる）
+    match /kx_marks/{cid} {
+      allow get, create, update: if request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/kx_slots/$(cid)).data.devices
+        && (request.method == 'get'
+            || (request.resource.data.keys().hasOnly(['b', 'at'])
+                && request.resource.data.b is string
+                && request.resource.data.b.size() < 800000));
+    }
+
     function slotChange() {
       let me = request.auth.uid;
       let before = resource.data.devices;

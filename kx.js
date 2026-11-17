@@ -55,6 +55,8 @@
   const normCode = (c) => c.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const LS_MODE = "kx-mode"; // "owner" | "code:<cid>"
   const LS_AUTH = "kx-auth";
+  const LS_W = "kx-w"; // wrapped key kept for offline use
+  const LS_SYNC = "kx-sync"; // id of the shared record for marks
   const lsGet = (k) => {
     try {
       return localStorage.getItem(k);
@@ -157,7 +159,9 @@
       const r = await fsGet("kx_keys/" + cid);
       if (r.status !== 200) return null;
       const w = r.doc.fields.w.stringValue;
-      return openWith(kek, { wraps: [{ w }], check: meta.check });
+      const k = await openWith(kek, { wraps: [{ w }], check: meta.check });
+      lsSet(LS_W, w);
+      return k;
     };
     let k = await read();
     if (k) return { k, cid };
@@ -187,6 +191,19 @@
     k = await read();
     if (!k) throw new GateError("コードが違うか、無効になっています");
     return { k, cid };
+  }
+  const ownerId = async (kekRaw) =>
+    hex(await crypto.subtle.digest("SHA-256", ENC.encode("kairos-owner:" + b64e(kekRaw)))).slice(0, 40);
+  /* register this device under the owner's record so marks can sync (best effort, never blocks) */
+  async function ownerJoin(kekRaw) {
+    const cid = await ownerId(kekRaw);
+    lsSet(LS_SYNC, cid);
+    const me = (await idToken()).uid;
+    const s = await fsGet("kx_slots/" + cid);
+    if (s.status !== 200) return;
+    const info = slotInfo(s.doc);
+    if (info.devices.some((d) => d.uid === me)) await fsWrite("kx_slots/" + cid, [], [dev(me)]);
+    else if (info.devices.length < 3) await fsWrite("kx_slots/" + cid, [], [dev(me)]);
   }
   /* owner passphrase: wraps in k.json */
   async function keyForOwner(pass, meta) {
@@ -221,11 +238,13 @@
           k = o.k;
           lsSet(LS_MODE, "owner");
           lsSet(LS_KEY, b64e(o.kek));
+          ownerJoin(o.kek).catch(() => {});
         } catch (x) {}
         if (!k) {
           const c = await keyForCode(v, meta, true);
           k = c.k;
           lsSet(LS_MODE, "code:" + c.cid);
+          lsSet(LS_SYNC, c.cid);
           lsSet(LS_KEY, b64e(await derive(normCode(v), meta)));
         }
         lsSet(LS_SALT, meta.salt);
@@ -243,13 +262,28 @@
     const raw = lsGet(LS_KEY);
     if (!raw || lsGet(LS_SALT) !== meta.salt) return null;
     const kek = b64d(raw);
-    if (mode === "owner" || !mode) return openWith(kek, meta);
+    if (mode === "owner" || !mode) {
+      const k = await openWith(kek, meta);
+      ownerJoin(kek).catch(() => {});
+      return k;
+    }
     const cid = mode.slice(5);
-    const r = await fsGet("kx_keys/" + cid);
-    if (r.status !== 200) throw new GateError("この端末の登録が外れました。コードを入れ直してください。");
-    const k = await openWith(kek, { wraps: [{ w: r.doc.fields.w.stringValue }], check: meta.check });
-    const me = (await idToken()).uid;
-    fsWrite("kx_slots/" + cid, [], [dev(me)]).catch(() => {});
+    let r = null;
+    try {
+      r = await fsGet("kx_keys/" + cid);
+    } catch (x) {
+      r = null; // offline: use the key saved on this device
+    }
+    if (r && r.status !== 200) throw new GateError("この端末の登録が外れました。コードを入れ直してください。");
+    const w = r ? r.doc.fields.w.stringValue : lsGet(LS_W);
+    if (!w) throw new Error("offline");
+    const k = await openWith(kek, { wraps: [{ w }], check: meta.check });
+    if (r) {
+      lsSet(LS_W, w);
+      idToken()
+        .then((t) => fsWrite("kx_slots/" + cid, [], [dev(t.uid)]))
+        .catch(() => {});
+    }
     return k;
   }
   function getKey() {
@@ -265,7 +299,8 @@
             note = x.message;
             lsSet(LS_MODE, null);
             lsSet(LS_KEY, null);
-          } else note = "";
+            lsSet(LS_W, null);
+          } else note = "通信できないため開けませんでした。電波のある場所で一度開くと、次からは電波がなくても開けます。";
         }
         return new Promise((res) => gate(meta, res, note));
       }));
@@ -297,6 +332,8 @@
           if (!ok) throw new Error("x");
           lsSet(LS_MODE, null);
           lsSet(LS_KEY, null);
+          lsSet(LS_W, null);
+          lsSet(LS_SYNC, null);
           location.reload();
         } catch (x) {
           if (msg) msg.textContent = "外せませんでした。通信状況を確認してください。";
@@ -311,6 +348,92 @@
     if (!r.ok) throw new Error("HTTP " + r.status);
     return JSON.parse(await decBuf(k, await r.arrayBuffer()));
   }
+  /* ---- ★保存・メモの同期（コードごと、暗号化して Firestore に保存） ---- */
+  const AT_LS = "kx-marks-at";
+  async function syncKey() {
+    const raw = lsGet(LS_KEY);
+    if (!raw) return null;
+    return crypto.subtle.importKey("raw", b64d(raw), "AES-GCM", false, ["encrypt", "decrypt"]);
+  }
+  async function pullMarks() {
+    const cid = lsGet(LS_SYNC);
+    const key = await syncKey();
+    if (!cid || !key) return null;
+    const r = await fsGet("kx_marks/" + cid);
+    if (r.status !== 200) return null;
+    const b = b64d(r.doc.fields.b.stringValue);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, key, b.slice(12));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  let pushTimer = null;
+  async function pushMarks(marks) {
+    const cid = lsGet(LS_SYNC);
+    const key = await syncKey();
+    if (!cid || !key) return;
+    const at = +(lsGet(AT_LS) || Date.now());
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(
+      await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, ENC.encode(JSON.stringify({ at, marks }))),
+    );
+    const all = new Uint8Array(12 + ct.length);
+    all.set(iv);
+    all.set(ct, 12);
+    const t = await idToken();
+    await fetch(fsBase() + ":commit", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + t.id, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        writes: [
+          {
+            update: {
+              name: docName("kx_marks/" + cid),
+              fields: { b: { stringValue: b64e(all) }, at: { integerValue: String(at) } },
+            },
+          },
+        ],
+      }),
+    });
+  }
+  const startAt = +(lsGet(AT_LS) || 0); // last local change before this session
+  let pulled = false;
+  let pending = null;
+  window.KairosSync = {
+    /* resolves to the newer marks from the cloud, or null to keep the local ones */
+    async pull(local) {
+      let out = null;
+      try {
+        const remote = await pullMarks();
+        if (remote && remote.at > startAt) {
+          lsSet(AT_LS, String(remote.at));
+          out = remote.marks || {};
+          pending = null;
+        } else if (local && Object.keys(local).length) {
+          lsSet(AT_LS, String(Math.max(startAt, Date.now())));
+          pending = local;
+        }
+      } catch (x) {}
+      pulled = true;
+      if (pending) {
+        const m = pending;
+        pending = null;
+        pushMarks(m).catch(() => {});
+      }
+      return out;
+    },
+    push(marks) {
+      if (!pulled) {
+        pending = marks;
+        return;
+      }
+      lsSet(AT_LS, String(Date.now()));
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(() => pushMarks(marks).catch(() => {}), 1500);
+    },
+  };
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+
   /* fetch() replacement for the bundled reference files */
   window.kxFetch = (src) =>
     fetchDec("data/" + src + ".enc").then(
