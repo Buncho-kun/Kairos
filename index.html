@@ -6776,12 +6776,13 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     ["cv", "薬剤換算"],
     ["ix", "相互作用"],
     ["pt", "精神療法"],
+    ["ps", "心理検査"],
     ["preg", "妊娠・授乳"],
     ["kampo", "漢方"],
     ["ccr", "CCr計算"],
   ];
-  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt"];
-  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt" };
+  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps"];
+  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest" };
   const TD = {};
   function lsGet(k, d) {
     try {
@@ -9958,6 +9959,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return t ? '<p><span class="pg-h">' + esc(h) + "</span>" + mdInline(t) + "</p>" : "";
   }
   S.pt = { q: "", k: "all" };
+  S.ps = { q: "", p: "all" };
   const PT_EV = {
     high: ["ev-h", "根拠 強い"],
     mid: ["ev-m", "根拠 中"],
@@ -10046,6 +10048,52 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       '<div class="folds">' +
       fold("t:pt2", "出典と更新履歴", "", toolSrcHTML("pt")) +
       "</div>"
+    );
+  }
+  function psRowHTML(x) {
+    return pgCardHTML(
+      "t:ps:" + x.id,
+      '<div class="rn-n"><b>' + esc(x.ab || x.n) + "</b>" + (x.ab ? "<span>" + esc(x.n) + "</span>" : "") + "</div>",
+      (x.age ? '<span class="pg-tg">' + esc(x.age) + "</span>" : "") + (x.form ? '<span class="pg-tg">' + esc(x.form) + "</span>" : ""),
+      x.what,
+      pgLine("対象", x.age) +
+        pgLine("所要時間", x.time) +
+        pgLine("形式", x.form) +
+        (arr(x.read).length ? '<div class="pg-h">解釈のポイント</div>' + ulHTML(x.read) : "") +
+        pgLine("補足", x.note),
+    );
+  }
+  function psListHTML() {
+    const d = TD.psytest;
+    if (!d) return "";
+    const q = toKata(String(S.ps.q || "").trim());
+    const xs = arr(d.list).filter(
+      (x) =>
+        (S.ps.p === "all" || arr(x.pur).includes(S.ps.p)) &&
+        (!q || toKata(x.n + (x.ab || "") + (x.what || "") + arr(x.read).join("") + (x.age || "")).includes(q)),
+    );
+    if (!xs.length) return '<p class="note">該当する心理検査はありません。</p>';
+    return arr(d.cats)
+      .map((c) => {
+        const a = xs.filter((x) => x.g === c.k);
+        return a.length ? '<div class="rn-g"><div class="lbl">' + esc(c.l) + "</div>" + a.map(psRowHTML).join("") + "</div>" : "";
+      })
+      .join("");
+  }
+  function psHTML() {
+    const d = TD.psytest || {};
+    return (
+      '<p class="hint">' + esc(d.intro || "") + "</p>" +
+      '<section class="tcard"><label class="sr" for="ps-q">心理検査を探す</label><input id="ps-q" class="field big" type="search" enterkeyhint="search" placeholder="名前・内容で探す（例：WAIS、記憶、ADHD）" autocomplete="off" value="' +
+      esc(S.ps.q) +
+      '"><div class="lbl">何を見たい？</div><div class="pgk" role="group" aria-label="目的">' +
+      [["all", "すべて"]]
+        .concat(arr(d.purposes).map((c) => [c.k, c.l]))
+        .map(([k, l]) => '<button type="button" data-psp="' + esc(k) + '" aria-pressed="' + (S.ps.p === k) + '">' + esc(l) + "</button>")
+        .join("") +
+      "</div></section>" +
+      '<div id="ps-list">' + psListHTML() + "</div>" +
+      '<div class="folds">' + fold("t:ps2", "出典と更新履歴", "", toolSrcHTML("ps")) + "</div>"
     );
   }
   function taperHTML(t) {
@@ -10223,7 +10271,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         "</div></div>"
       );
     h +=
-      S.tool === "pt"
+      S.tool === "ps"
+        ? psHTML()
+        : S.tool === "pt"
         ? ptHTML()
         : S.tool === "preg"
           ? pregHTML()
@@ -10237,7 +10287,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
                   ? ccrHTML()
                   : cvSegHTML() + cpHTML();
     h +=
-      S.tool === "pt"
+      S.tool === "ps"
+        ? '<p class="caveat">要点は各検査の手引・出版社の資料・文献の要約です（' + esc(td.checkedAt || "—") + " 確認）。実施と解釈は手引に従い、訓練を受けた検査者が行ってください。</p></div>"
+        : S.tool === "pt"
         ? '<p class="caveat">要点は各マニュアルとガイドラインの要約です（' +
           esc(td.checkedAt || "—") +
           " 確認）。実施するときは原本と研修で手順を確かめてください。</p></div>"
@@ -10249,7 +10301,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return h;
   }
   function toolsAfter() {
-    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || !toolDoc(S.tool)) return;
+    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || !toolDoc(S.tool)) return;
     if (S.tool === "bz") bzUpdate();
     else if (S.tool === "ix") {
       ixSuggest();
@@ -10340,7 +10392,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     }
   }
   function toolMarkdown() {
-    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt") return "";
+    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps") return "";
     return S.tool === "dx"
       ? dxMarkdown()
       : S.tool === "sc"
@@ -10374,6 +10426,14 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       lsSet("pu-cv", S.tool);
       renderHeader();
       renderTools();
+      return;
+    }
+    const pp = e.target.closest("[data-psp]");
+    if (pp) {
+      S.ps.p = pp.dataset.psp;
+      const L = $("ps-list");
+      if (L) L.innerHTML = psListHTML();
+      document.querySelectorAll("[data-psp]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.psp === S.ps.p)));
       return;
     }
     const pk = e.target.closest("[data-ptk]");
@@ -10414,7 +10474,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   });
   $("main").addEventListener("input", (e) => {
     if (S.tab !== "tools") return;
-    if (e.target.id === "pt-q") {
+    if (e.target.id === "ps-q") {
+      S.ps.q = e.target.value;
+      const L = $("ps-list");
+      if (L) L.innerHTML = psListHTML();
+    } else if (e.target.id === "pt-q") {
       S.pt.q = e.target.value;
       const L = $("pt-list");
       if (L) L.innerHTML = ptListHTML();
