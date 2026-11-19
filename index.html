@@ -2905,6 +2905,7 @@ textarea {
 .rn-b.ci { background:var(--alert); color:#fff; }
 .rn-b.dose { color:var(--caution); box-shadow:inset 0 0 0 1px var(--caution); }
 .rn-b.care { color:var(--sub); box-shadow:inset 0 0 0 1px var(--rule); }
+.rn-b.none { color:var(--ok); box-shadow:inset 0 0 0 1px var(--ok); }
 .rn-q { display:block; font-style:normal; font-weight:500; font-size:10.5px; color:var(--sub); }
 .rn-r p { margin:0; font-size:calc(13.5px * var(--fs)); line-height:1.65; }
 @media (max-width: 600px) { .tseg { grid-template-columns: repeat(4, 1fr); } }
@@ -6777,12 +6778,13 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     ["ix", "相互作用"],
     ["pt", "精神療法"],
     ["ps", "心理検査"],
+    ["og", "肝・腎"],
     ["preg", "妊娠・授乳"],
     ["kampo", "漢方"],
     ["ccr", "CCr計算"],
   ];
-  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps"];
-  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest" };
+  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps", "og"];
+  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest", og: "organ" };
   const TD = {};
   function lsGet(k, d) {
     try {
@@ -9960,6 +9962,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   }
   S.pt = { q: "", k: "all" };
   S.ps = { q: "", p: "all" };
+  S.og = { q: "", m: "rn" };
   const PT_EV = {
     high: ["ev-h", "根拠 強い"],
     mid: ["ev-m", "根拠 中"],
@@ -10048,6 +10051,58 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       '<div class="folds">' +
       fold("t:pt2", "出典と更新履歴", "", toolSrcHTML("pt")) +
       "</div>"
+    );
+  }
+  const OG_RANK = { none: 0, care: 1, dose: 2, ci: 3 };
+  const OG_LAB = { none: "記載なし", care: "注意のみ", dose: "用量指定", ci: "禁忌あり" };
+  function ogLv(x) {
+    const a = (x.rn && x.rn.lv) || "none", b = (x.hp && x.hp.lv) || "none";
+    return S.og.m === "rn" ? a : S.og.m === "hp" ? b : OG_RANK[a] >= OG_RANK[b] ? a : b;
+  }
+  function ogRowHTML(x) {
+    const b = (k, o) => '<span class="rn-b ' + esc(o.lv) + '">' + k + "：" + OG_LAB[o.lv] + "</span>";
+    const src = x.src && safeUrl(x.src.url);
+    return pgCardHTML(
+      "t:og:" + x.id,
+      '<div class="rn-n"><b>' + esc(x.n) + "</b><span>" + esc(x.c) + "</span></div>",
+      b("腎", x.rn || {}) + b("肝", x.hp || {}),
+      "",
+      pgLine("腎機能障害", x.rn && x.rn.t) +
+        pgLine("肝機能障害", x.hp && x.hp.t) +
+        (x.src
+          ? '<p class="note">出典：' + (src ? '<a href="' + esc(src) + '" target="_blank" rel="noopener noreferrer">' + esc(x.src.label) + "</a>" : esc(x.src.label)) + "</p>"
+          : ""),
+    );
+  }
+  function ogListHTML() {
+    const d = TD.organ;
+    if (!d) return "";
+    const q = toKata(String(S.og.q || "").trim());
+    const xs = arr(d.list).filter((x) => !q || toKata(x.n + x.c).includes(q));
+    if (!xs.length) return '<p class="note">該当する薬はありません。</p>';
+    return arr(d.levels)
+      .map((lv) => {
+        const a = xs.filter((x) => ogLv(x) === lv.k).sort((p, r) => jaSort(p.c + p.n, r.c + r.n));
+        return a.length
+          ? '<div class="rn-g"><div class="lbl">' + esc(lv.l) + "（" + a.length + "）</div><p class=\"note\">" + esc(lv.d) + "</p>" + a.map(ogRowHTML).join("") + "</div>"
+          : "";
+      })
+      .join("");
+  }
+  function ogHTML() {
+    const d = TD.organ || {};
+    return (
+      '<p class="hint">' + esc(d.intro || "") + "</p>" +
+      '<section class="tcard"><label class="sr" for="og-q">薬を探す</label><input id="og-q" class="field big" type="search" enterkeyhint="search" placeholder="薬の名前・分類で探す（例：クエチアピン、睡眠薬）" autocomplete="off" value="' +
+      esc(S.og.q) +
+      '"><div class="pgk" role="group" aria-label="どの機能障害で見るか">' +
+      [["rn", "腎機能障害"], ["hp", "肝機能障害"], ["both", "両方"]]
+        .map(([k, l]) => '<button type="button" data-ogm="' + k + '" aria-pressed="' + (S.og.m === k) + '">' + l + "</button>")
+        .join("") +
+      "</div></section>" +
+      '<p class="note">' + esc(d.note || "") + "</p>" +
+      '<div id="og-list">' + ogListHTML() + "</div>" +
+      '<div class="folds">' + fold("t:og2", "出典と更新履歴", "", toolSrcHTML("og")) + "</div>"
     );
   }
   function psRowHTML(x) {
@@ -10271,7 +10326,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         "</div></div>"
       );
     h +=
-      S.tool === "ps"
+      S.tool === "og"
+        ? ogHTML()
+        : S.tool === "ps"
         ? psHTML()
         : S.tool === "pt"
         ? ptHTML()
@@ -10287,7 +10344,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
                   ? ccrHTML()
                   : cvSegHTML() + cpHTML();
     h +=
-      S.tool === "ps"
+      S.tool === "og"
+        ? '<p class="caveat">各薬の電子添文の記載です（' + esc(td.checkedAt || "—") + " 確認）。重症度の判定と最終判断は処方医が行い、最新の添文で確認してください。</p></div>"
+        : S.tool === "ps"
         ? '<p class="caveat">要点は各検査の手引・出版社の資料・文献の要約です（' + esc(td.checkedAt || "—") + " 確認）。実施と解釈は手引に従い、訓練を受けた検査者が行ってください。</p></div>"
         : S.tool === "pt"
         ? '<p class="caveat">要点は各マニュアルとガイドラインの要約です（' +
@@ -10301,7 +10360,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return h;
   }
   function toolsAfter() {
-    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || !toolDoc(S.tool)) return;
+    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || !toolDoc(S.tool)) return;
     if (S.tool === "bz") bzUpdate();
     else if (S.tool === "ix") {
       ixSuggest();
@@ -10392,7 +10451,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     }
   }
   function toolMarkdown() {
-    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps") return "";
+    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og") return "";
     return S.tool === "dx"
       ? dxMarkdown()
       : S.tool === "sc"
@@ -10426,6 +10485,14 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       lsSet("pu-cv", S.tool);
       renderHeader();
       renderTools();
+      return;
+    }
+    const om = e.target.closest("[data-ogm]");
+    if (om) {
+      S.og.m = om.dataset.ogm;
+      const L = $("og-list");
+      if (L) L.innerHTML = ogListHTML();
+      document.querySelectorAll("[data-ogm]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ogm === S.og.m)));
       return;
     }
     const pp = e.target.closest("[data-psp]");
@@ -10474,7 +10541,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   });
   $("main").addEventListener("input", (e) => {
     if (S.tab !== "tools") return;
-    if (e.target.id === "ps-q") {
+    if (e.target.id === "og-q") {
+      S.og.q = e.target.value;
+      const L = $("og-list");
+      if (L) L.innerHTML = ogListHTML();
+    } else if (e.target.id === "ps-q") {
       S.ps.q = e.target.value;
       const L = $("ps-list");
       if (L) L.innerHTML = psListHTML();
