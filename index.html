@@ -709,6 +709,7 @@ main::after {
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
+.mgrid.c2 { grid-template-columns: repeat(2, 1fr); }
 .mbtn {
   position: relative;
   display: grid;
@@ -5508,18 +5509,18 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     });
     if (acute.length)
       h +=
-        '<h2 class="grp">急な症状</h2><div class="mgrid">' +
+        '<h2 class="grp">急な症状</h2><div class="mgrid' + (acute.length % 3 ? " c2" : "") + '">' +
         acute.map((m) => btn(m, "")).join("") +
         "</div>";
     if (od.length) h += '<h2 class="grp">中毒</h2>' + od.map((m) => btn(m, "od")).join("");
     if (psy.length)
       h +=
-        '<h2 class="grp">精神科で多い身体管理</h2><div class="mgrid">' +
+        '<h2 class="grp">精神科で多い身体管理</h2><div class="mgrid' + (psy.length % 3 ? " c2" : "") + '">' +
         psy.map((m) => btn(m, "")).join("") +
         "</div>";
     if (chronic.length)
       h +=
-        '<h2 class="grp">検査値・持病の管理</h2><div class="mgrid">' +
+        '<h2 class="grp">検査値・持病の管理</h2><div class="mgrid' + (chronic.length % 3 ? " c2" : "") + '">' +
         chronic.map((m) => btn(m, "")).join("") +
         "</div>";
     h += "</div>";
@@ -10154,9 +10155,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return pgCardHTML(
       "t:ps:" + x.id,
       '<div class="rn-n"><b>' + esc(x.ab || x.n) + "</b>" + (x.ab ? "<span>" + esc(x.n) + "</span>" : "") + "</div>",
-      (x.age ? '<span class="pg-tg">' + esc(x.age) + "</span>" : "") + (x.form ? '<span class="pg-tg">' + esc(x.form) + "</span>" : ""),
+      (x.ins && /^D28/.test(x.ins) ? '<span class="rn-b ins">' + esc(x.ins.split("（")[0]) + "</span>" : "") +
+        (x.age ? '<span class="pg-tg">' + esc(x.age) + "</span>" : "") + (x.form ? '<span class="pg-tg">' + esc(x.form) + "</span>" : ""),
       x.what,
-      pgLine("対象", x.age) +
+      pgLine("保険", x.ins) +
+        pgLine("対象", x.age) +
         pgLine("所要時間", x.time) +
         pgLine("形式", x.form) +
         (arr(x.read).length ? '<div class="pg-h">解釈のポイント</div>' + ulHTML(x.read) : "") +
@@ -10171,7 +10174,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const xs = arr(d.list).filter(
       (x) =>
         (S.ps.p === "all" || arr(x.pur).includes(S.ps.p)) &&
-        (!q || toKata(x.n + (x.ab || "") + (x.what || "") + arr(x.read).join("") + arr(x.idea).join("") + (x.age || "")).includes(q)),
+        (!q || toKata(x.n + (x.ab || "") + (x.what || "") + arr(x.read).join("") + arr(x.idea).join("") + (x.ins || "") + (x.age || "")).includes(q)),
     );
     if (!xs.length) return '<p class="note">該当する心理検査はありません。</p>';
     return arr(d.cats)
@@ -10194,7 +10197,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         .join("") +
       "</div></section>" +
       '<div id="ps-list">' + psListHTML() + "</div>" +
-      '<div class="folds">' + fold("t:ps2", "出典と更新履歴", "", toolSrcHTML("ps")) + "</div>"
+      '<div class="folds">' +
+      (d.insurance
+        ? fold("t:ps3", esc(d.insurance.title), "", ulHTML(d.insurance.rules) + arr(d.insurance.lists).map((x) => "<h4>" + esc(x.h) + "</h4><p>" + esc(x.t) + "</p>").join(""))
+        : "") +
+      fold("t:ps2", "出典と更新履歴", "", toolSrcHTML("ps")) + "</div>"
     );
   }
   function taperHTML(t) {
