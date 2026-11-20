@@ -2905,6 +2905,13 @@ textarea {
 .rn-b.ci { background:var(--alert); color:#fff; }
 .rn-b.dose { color:var(--caution); box-shadow:inset 0 0 0 1px var(--caution); }
 .rn-b.care { color:var(--sub); box-shadow:inset 0 0 0 1px var(--rule); }
+.cm-t { width:100%; border-collapse:collapse; font-size:13px; }
+.cm-t th, .cm-t td { padding:7px 6px; border-bottom:1px solid var(--rule); vertical-align:top; text-align:left; }
+.cm-t td.v { font-variant-numeric:tabular-nums; }
+.cm-t td.v b { font-weight:700; }
+.cm-t .ci { display:block; color:var(--sub); font-size:11px; }
+.cm-t .sig { color:var(--accent); }
+.cm-sel { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .rn-b.none { color:var(--ok); box-shadow:inset 0 0 0 1px var(--ok); }
 .rn-q { display:block; font-style:normal; font-weight:500; font-size:10.5px; color:var(--sub); }
 .rn-r p { margin:0; font-size:calc(13.5px * var(--fs)); line-height:1.65; }
@@ -6779,12 +6786,13 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     ["pt", "精神療法"],
     ["ps", "心理検査"],
     ["og", "肝・腎"],
+    ["cm", "2剤比較"],
     ["preg", "妊娠・授乳"],
     ["kampo", "漢方"],
     ["ccr", "CCr計算"],
   ];
-  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps", "og"];
-  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest", og: "organ" };
+  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps", "og", "cm"];
+  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest", og: "organ", cm: "cmp" };
   const TD = {};
   function lsGet(k, d) {
     try {
@@ -9963,6 +9971,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   S.pt = { q: "", k: "all" };
   S.ps = { q: "", p: "all" };
   S.og = { q: "", m: "rn" };
+  S.cm = { a: lsGet("pu-cma", "ari"), b: lsGet("pu-cmb", "ola") };
   const PT_EV = {
     high: ["ev-h", "根拠 強い"],
     mid: ["ev-m", "根拠 中"],
@@ -10058,6 +10067,38 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   function ogLv(x) {
     const a = (x.rn && x.rn.lv) || "none", b = (x.hp && x.hp.lv) || "none";
     return S.og.m === "rn" ? a : S.og.m === "hp" ? b : OG_RANK[a] >= OG_RANK[b] ? a : b;
+  }
+  function cmFmt(o, u) {
+    if (!o) return '<span class="ci">—</span>';
+    const null0 = u === "RR" ? 1 : 0;
+    const sig = (o[1] > null0 && o[2] > null0) || (o[1] < null0 && o[2] < null0);
+    const f = (x) => (Math.abs(x) >= 10 ? x.toFixed(1) : x.toFixed(2));
+    return (sig ? '<b class="sig">' + f(o[0]) + "＊</b>" : f(o[0])) + '<span class="ci">' + f(o[1]) + "〜" + f(o[2]) + "</span>";
+  }
+  function cmTableHTML() {
+    const d = TD.cmp;
+    if (!d) return "";
+    const ds = arr(d.drugs), A = ds.find((x) => x.id === S.cm.a) || ds[0], B = ds.find((x) => x.id === S.cm.b) || ds[1];
+    if (!A || !B) return "";
+    return (
+      '<table class="cm-t"><thead><tr><th>項目</th><th>' + esc(A.n) + "</th><th>" + esc(B.n) + "</th></tr></thead><tbody>" +
+      "<tr><td>分類</td><td>" + esc(A.cl) + "</td><td>" + esc(B.cl) + "</td></tr>" +
+      arr(d.outcomes)
+        .map((o) => "<tr><td>" + esc(o.l) + '<span class="ci">' + esc(o.u) + '</span></td><td class="v">' + cmFmt(A.v[o.k], o.u) + '</td><td class="v">' + cmFmt(B.v[o.k], o.u) + "</td></tr>")
+        .join("") +
+      "</tbody></table>"
+    );
+  }
+  function cmHTML() {
+    const d = TD.cmp || {};
+    const opt = (sel) => arr(d.drugs).map((x) => '<option value="' + esc(x.id) + '"' + (x.id === sel ? " selected" : "") + ">" + esc(x.n) + "（" + esc(x.b) + "）</option>").join("");
+    return (
+      '<p class="hint">' + esc(d.intro || "") + "</p>" +
+      '<section class="tcard"><div class="cm-sel"><label class="fl">薬A<select class="tsel" data-cm="a">' + opt(S.cm.a) + '</select></label><label class="fl">薬B<select class="tsel" data-cm="b">' + opt(S.cm.b) + "</select></label></div></section>" +
+      '<div id="cm-out">' + cmTableHTML() + "</div>" +
+      '<p class="note">＊＝95%信用区間がプラセボの値をまたがない</p>' +
+      '<div class="folds">' + fold("t:cm1", "読み方と注意", "", ulHTML(d.notes)) + fold("t:cm2", "出典と更新履歴", "", toolSrcHTML("cm")) + "</div>"
+    );
   }
   function ogRowHTML(x) {
     const b = (k, o) => '<span class="rn-b ' + esc(o.lv) + '">' + k + "：" + OG_LAB[o.lv] + "</span>";
@@ -10326,7 +10367,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         "</div></div>"
       );
     h +=
-      S.tool === "og"
+      S.tool === "cm"
+        ? cmHTML()
+        : S.tool === "og"
         ? ogHTML()
         : S.tool === "ps"
         ? psHTML()
@@ -10344,7 +10387,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
                   ? ccrHTML()
                   : cvSegHTML() + cpHTML();
     h +=
-      S.tool === "og"
+      S.tool === "cm"
+        ? '<p class="caveat">短期試験の平均的な結果です（' + esc(td.checkedAt || "—") + " 確認）。個々の患者での効果・副作用は大きく異なり得るので、併存疾患や本人の希望とあわせて判断してください。</p></div>"
+        : S.tool === "og"
         ? '<p class="caveat">各薬の電子添文の記載です（' + esc(td.checkedAt || "—") + " 確認）。重症度の判定と最終判断は処方医が行い、最新の添文で確認してください。</p></div>"
         : S.tool === "ps"
         ? '<p class="caveat">要点は各検査の手引・出版社の資料・文献の要約です（' + esc(td.checkedAt || "—") + " 確認）。実施と解釈は手引に従い、訓練を受けた検査者が行ってください。</p></div>"
@@ -10360,7 +10405,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return h;
   }
   function toolsAfter() {
-    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || !toolDoc(S.tool)) return;
+    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || S.tool === "cm" || !toolDoc(S.tool)) return;
     if (S.tool === "bz") bzUpdate();
     else if (S.tool === "ix") {
       ixSuggest();
@@ -10451,7 +10496,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     }
   }
   function toolMarkdown() {
-    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og") return "";
+    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || S.tool === "cm") return "";
     return S.tool === "dx"
       ? dxMarkdown()
       : S.tool === "sc"
@@ -10632,6 +10677,13 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       return;
     }
     if (el.tagName !== "SELECT") return;
+    if (el.dataset.cm) {
+      S.cm[el.dataset.cm] = el.value;
+      lsSet("pu-cm" + el.dataset.cm, el.value);
+      const O = $("cm-out");
+      if (O) O.innerHTML = cmTableHTML();
+      return;
+    }
     const t = el.dataset.t,
       i = +el.dataset.i;
     if (t === "cp-d") {
