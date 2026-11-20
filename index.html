@@ -1534,7 +1534,8 @@ textarea {
 
 .tseg {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
   gap: 2px;
   background: var(--press);
   border-radius: 9px;
@@ -2915,7 +2916,10 @@ textarea {
 .rn-b.none { color:var(--ok); box-shadow:inset 0 0 0 1px var(--ok); }
 .rn-q { display:block; font-style:normal; font-weight:500; font-size:10.5px; color:var(--sub); }
 .rn-r p { margin:0; font-size:calc(13.5px * var(--fs)); line-height:1.65; }
-@media (max-width: 600px) { .tseg { grid-template-columns: repeat(4, 1fr); } }
+.tseg select { width:100%; border:0; border-radius:7px; padding:8px 28px 8px 10px; font-size:15px; font-weight:700; color:var(--ink); background:var(--sheet) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center; -webkit-appearance:none; appearance:none; box-shadow:0 1px 3px rgba(20,30,50,.14); text-align:center; text-align-last:center; }
+.tseg button.tnav { font-size:18px; padding:4px 0; color:var(--sub); }
+.tseg .tpos { grid-column:1 / -1; text-align:center; font-size:11px; color:var(--sub); padding-top:2px; }
+#main.tslide { transition: transform .18s ease, opacity .18s ease; }
 .pgd { padding:0; gap:0; }
 .pgd > details > summary { list-style:none; cursor:pointer; display:grid; gap:6px; padding:12px 36px 12px 14px; position:relative; }
 .pgd > details > summary::-webkit-details-marker { display:none; }
@@ -3881,16 +3885,16 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     }
     $("tseg").hidden = !tools;
     if (tools)
-      $("tseg").innerHTML = TOOLS.map(
-        ([k, l]) =>
-          '<button type="button" data-tool="' +
-          k +
-          '" aria-pressed="' +
-          (S.tool === k || (k === "cv" && (S.tool === "cp" || S.tool === "bz"))) +
-          '">' +
-          esc(l) +
-          "</button>",
-      ).join("");
+      (() => {
+        const i = toolIdx();
+        $("tseg").innerHTML =
+          '<button type="button" class="tnav" data-tstep="-1" aria-label="前のツール">‹</button>' +
+          '<select id="tsel" aria-label="ツールを選ぶ">' +
+          TOOLS.map(([k, l], j) => '<option value="' + k + '"' + (j === i ? " selected" : "") + ">" + esc(l) + "</option>").join("") +
+          "</select>" +
+          '<button type="button" class="tnav" data-tstep="1" aria-label="次のツール">›</button>' +
+          '<div class="tpos">' + (i + 1) + " / " + TOOLS.length + "　左右にスワイプで切り替え</div>";
+      })();
     $("hmode").hidden = !man;
     if (man) {
       const m = curMode();
@@ -10512,16 +10516,48 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
               ? ccrMarkdown()
               : cpMarkdown();
   }
-  $("tseg").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-tool]");
-    if (!b) return;
-    S.tool =
-      b.dataset.tool === "cv" ? (lsGet("pu-cv", "cp") === "bz" ? "bz" : "cp") : b.dataset.tool;
+  function toolIdx() {
+    const k = S.tool === "cp" || S.tool === "bz" ? "cv" : S.tool;
+    return Math.max(0, TOOLS.findIndex((t) => t[0] === k));
+  }
+  function goTool(k, dir) {
+    S.tool = k === "cv" ? (lsGet("pu-cv", "cp") === "bz" ? "bz" : "cp") : k;
     lsSet("pu-tool", S.tool);
     renderHeader();
     renderTools();
     toTop();
+    const M = $("main");
+    if (dir && M.animate) M.animate([{ transform: "translateX(" + dir * 24 + "px)", opacity: 0.4 }, { transform: "none", opacity: 1 }], { duration: 180, easing: "ease-out" });
+  }
+  function stepTool(d) {
+    const n = TOOLS.length;
+    goTool(TOOLS[(toolIdx() + d + n) % n][0], d);
+  }
+  $("tseg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tstep]");
+    if (b) stepTool(+b.dataset.tstep);
   });
+  $("tseg").addEventListener("change", (e) => {
+    if (e.target.id === "tsel") goTool(e.target.value, 0);
+  });
+  (() => {
+    let x0 = null, y0 = 0, t0 = 0;
+    const M = $("main");
+    M.addEventListener("touchstart", (e) => {
+      x0 = null;
+      if (S.tab !== "tools" || e.touches.length !== 1) return;
+      const el = e.target;
+      if (el.closest("input,select,textarea,.cm-t,.tscroll,[data-noswipe]")) return;
+      for (let n = el; n && n !== M; n = n.parentElement) if (n.scrollWidth > n.clientWidth + 4 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+    }, { passive: true });
+    M.addEventListener("touchend", (e) => {
+      if (x0 == null) return;
+      const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 700) stepTool(dx < 0 ? 1 : -1);
+    }, { passive: true });
+  })();
   $("main").addEventListener("click", (e) => {
     if (S.tab !== "tools") return;
     const c = e.target.closest("[data-cv]");
