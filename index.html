@@ -10156,6 +10156,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         pgLine("所要時間", x.time) +
         pgLine("形式", x.form) +
         (arr(x.read).length ? '<div class="pg-h">解釈のポイント</div>' + ulHTML(x.read) : "") +
+        (arr(x.idea).length ? '<div class="pg-h">考え方</div>' + ulHTML(x.idea) : "") +
         pgLine("補足", x.note),
     );
   }
@@ -10166,7 +10167,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const xs = arr(d.list).filter(
       (x) =>
         (S.ps.p === "all" || arr(x.pur).includes(S.ps.p)) &&
-        (!q || toKata(x.n + (x.ab || "") + (x.what || "") + arr(x.read).join("") + (x.age || "")).includes(q)),
+        (!q || toKata(x.n + (x.ab || "") + (x.what || "") + arr(x.read).join("") + arr(x.idea).join("") + (x.age || "")).includes(q)),
     );
     if (!xs.length) return '<p class="note">該当する心理検査はありません。</p>';
     return arr(d.cats)
