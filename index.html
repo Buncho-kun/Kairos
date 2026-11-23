@@ -2952,6 +2952,9 @@ textarea {
 .pg-tg { font-size:12px; color:var(--sub); }
 .pt-es { display:grid; gap:8px; padding:10px 12px; border-radius:10px; background:var(--press); box-shadow:inset 0 0 0 1px var(--rule); }
 .pt-es .pt-core { font-weight:600; }
+.pg-ng { margin-top:10px; padding-top:8px; border-top:1px dashed var(--rule); }
+.pg-ngi { display:block; width:100%; text-align:left; font:inherit; font-size:.85em; padding:6px 0; background:none; border:0; color:inherit; opacity:.8; cursor:pointer; }
+.pg-ngi b { margin-right:8px; }
 .pt-sc { padding:8px 0; border-top:1px solid var(--rule); }
 .pt-sc:first-child { border-top:0; }
 .pt-sc-l .note { margin:2px 0 6px; }
@@ -10447,8 +10450,17 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "</div>" +
       arr(d.uses)
         .map((u) => {
-          const rows = arr(u.items)
-            .filter(([id]) => byId[id])
+          const its = arr(u.items).filter(([id]) => byId[id]);
+          const out = (id, why) => {
+            const x = byId[id];
+            const lab = u.k === "lac" ? x.l && x.l.lv === "avoid" : x.p && (x.p.lv === "ci" || x.p.lv === "avoid");
+            if (lab) return u.k === "lac" ? "電子添文で授乳を避ける" : "電子添文で" + (x.p.lv === "ci" ? "禁忌" : "原則避ける");
+            if (/third-line|データ不十分|使わない/.test(why)) return "-";
+            return "";
+          };
+          const ok = its.filter(([id, why]) => !out(id, why)),
+            ng = its.filter(([id, why]) => out(id, why));
+          const rows = ok
             .map(([id, why]) => {
               const x = byId[id],
                 pp = PG_P[x.p && x.p.lv],
@@ -10460,7 +10472,14 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
               );
             })
             .join("");
-          return fold("t:pgu:" + u.k, esc(u.l), arr(u.items).length + "剤", '<p class="note">' + esc(u.note) + "</p>" + rows + '<p class="note">押すと「薬ごとの解説」のその薬に移動します。</p>');
+          const ngh = ng.length
+            ? '<div class="pg-ng"><div class="pg-h">選びにくい薬（' + ng.length + "剤）</div>" +
+              ng
+                .map(([id, why]) => '<button type="button" class="pg-ngi" data-pgjump="' + esc(id) + '"><b>' + esc(byId[id].n) + "</b><span>" + (out(id, why) === "-" ? "" : esc(out(id, why)) + "。") + esc(why) + "</span></button>")
+                .join("") +
+              "</div>"
+            : "";
+          return fold("t:pgu:" + u.k, esc(u.l), ok.length + "剤", '<p class="note">' + esc(u.note) + "</p>" + rows + ngh + '<p class="note">押すと「薬ごとの解説」のその薬に移動します。</p>');
         })
         .join("")
     );
