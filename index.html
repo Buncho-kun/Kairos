@@ -6817,6 +6817,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     ["pt", "精神療法"],
     ["ps", "心理検査"],
     ["og", "肝・腎"],
+    ["ae", "抗てんかん薬"],
     ["cm", "2剤比較"],
     ["preg", "妊娠・授乳"],
     ["kampo", "漢方"],
@@ -6834,8 +6835,8 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const v = TOOLS.filter((t) => !off.includes(t[0]));
     return v.length ? v : TOOLS;
   }
-  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps", "og", "cm"];
-  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest", og: "organ", cm: "cmp" };
+  const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps", "og", "cm", "ae"];
+  const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest", og: "organ", cm: "cmp", ae: "aed" };
   const TD = {};
   function lsGet(k, d) {
     try {
@@ -10014,6 +10015,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   S.pt = { q: "", k: "all" };
   S.ps = { q: "", p: "all" };
   S.og = { q: "", m: "rn" };
+  S.ae = { q: "", s: "all" };
   S.cm = { a: lsGet("pu-cma", "ari"), b: lsGet("pu-cmb", "ola") };
   const PT_EV = {
     high: ["ev-h", "根拠 強い"],
@@ -10110,6 +10112,69 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   function ogLv(x) {
     const a = (x.rn && x.rn.lv) || "none", b = (x.hp && x.hp.lv) || "none";
     return S.og.m === "rn" ? a : S.og.m === "hp" ? b : OG_RANK[a] >= OG_RANK[b] ? a : b;
+  }
+  function aeRowHTML(x, tag) {
+    return pgCardHTML(
+      "t:ae:" + x.id,
+      '<div class="rn-n"><b>' + esc(x.n) + "</b><span>" + esc(x.ab) + "・" + esc(x.b) + "</span></div>",
+      tag ? '<span class="rn-b ' + tag[0] + '">' + tag[1] + "</span>" : "",
+      x.mech ? "作用：" + x.mech : "",
+      pgLine("主な副作用", x.ae) +
+        (arr(x.gl).length ? '<div class="pg-h">ガイドライン2018での位置づけ</div>' + ulHTML(x.gl) : "") +
+        (arr(x.psy).length ? '<div class="pg-h">精神症状（CQ3-5）</div>' + ulHTML(x.psy) : "") +
+        (arr(x.body).length ? '<div class="pg-h">代謝・体の病気（CQ3-6・3-8）</div>' + ulHTML(x.body) : "") +
+        (arr(x.ix).length ? '<div class="pg-h">相互作用（電子添文）</div>' + ulHTML(x.ix) : ""),
+    );
+  }
+  function aeListHTML() {
+    const d = TD.aed;
+    if (!d) return "";
+    const q = toKata(String(S.ae.q || "").trim());
+    const byId = {};
+    arr(d.list).forEach((x) => (byId[x.id] = x));
+    const hit = (x) => x && (!q || toKata(x.n + x.ab + x.b + (x.mech || "")).includes(q));
+    if (S.ae.s === "all") {
+      const xs = arr(d.list).filter(hit);
+      return xs.length ? xs.map((x) => aeRowHTML(x)).join("") : '<p class="note">該当する薬はありません。</p>';
+    }
+    const z = arr(d.seizures).find((y) => y.k === S.ae.s);
+    if (!z) return "";
+    const grp = (ids, lab, tag) => {
+      const xs = arr(ids).map((i) => byId[i]).filter(hit);
+      return xs.length ? '<div class="rn-g"><div class="lbl">' + lab + "</div>" + xs.map((x) => aeRowHTML(x, tag)).join("") + "</div>" : "";
+    };
+    return (
+      '<p class="note">' + esc(z.note) + "</p>" +
+      grp(z.first, "第一選択", ["none", "第一選択"]) +
+      grp(z.second, "第二選択", ["care", "第二選択"]) +
+      grp(z.avoid, "慎重投与（悪化させうる）", ["ci", "慎重投与"])
+    );
+  }
+  function aeHTML() {
+    const d = TD.aed || {};
+    return (
+      '<p class="hint">' + esc(d.intro || "") + "</p>" +
+      '<section class="tcard"><label class="sr" for="ae-q">薬を探す</label><input id="ae-q" class="field big" type="search" enterkeyhint="search" placeholder="薬の名前・略号で探す（例：LEV、ラミクタール）" autocomplete="off" value="' +
+      esc(S.ae.q) +
+      '"><div class="lbl">発作型から選ぶ</div><div class="pgk" role="group" aria-label="発作型">' +
+      [["all", "すべて"]]
+        .concat(arr(d.seizures).map((c) => [c.k, c.l]))
+        .map(([k, l]) => '<button type="button" data-aes="' + esc(k) + '" aria-pressed="' + (S.ae.s === k) + '">' + esc(l) + "</button>")
+        .join("") +
+      "</div></section>" +
+      '<div id="ae-list">' + aeListHTML() + "</div>" +
+      '<div class="folds">' +
+      fold(
+        "t:ae1",
+        "精神疾患の併存（CQ3-5）",
+        "避ける薬・考慮してよい薬",
+        '<p class="note">' + esc(d.psyNote || "") + "</p>" +
+          arr(d.psy).map((r) => "<h4>" + esc(r.l) + "</h4>" + (r.avoid ? pgLine("避ける", r.avoid) : "") + (r.ok ? pgLine("考慮してよい", r.ok) : "")).join(""),
+      ) +
+      fold("t:ae2", "併用薬の注意（CQ3-8）", "", ulHTML(d.ixNote)) +
+      fold("t:ae3", "出典と更新履歴", "", toolSrcHTML("ae")) +
+      "</div>"
+    );
   }
   function cmFmt(o, u) {
     if (!o) return '<span class="ci">—</span>';
@@ -10457,7 +10522,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         "</div></div>"
       );
     h +=
-      S.tool === "cm"
+      S.tool === "ae"
+        ? aeHTML()
+        : S.tool === "cm"
         ? cmHTML()
         : S.tool === "og"
         ? ogHTML()
@@ -10477,7 +10544,9 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
                   ? ccrHTML()
                   : cvSegHTML() + cpHTML();
     h +=
-      S.tool === "cm"
+      S.tool === "ae"
+        ? '<p class="caveat">てんかん診療ガイドライン2018と電子添文の要約です（' + esc(td.checkedAt || "—") + " 確認）。適応・用量は最新の電子添文で、診断と薬の選択はてんかん専門医と相談してください。</p></div>"
+        : S.tool === "cm"
         ? '<p class="caveat">短期試験の平均的な結果です（' + esc(td.checkedAt || "—") + " 確認）。個々の患者での効果・副作用は大きく異なり得るので、併存疾患や本人の希望とあわせて判断してください。</p></div>"
         : S.tool === "og"
         ? '<p class="caveat">各薬の電子添文の記載です（' + esc(td.checkedAt || "—") + " 確認）。重症度の判定と最終判断は処方医が行い、最新の添文で確認してください。</p></div>"
@@ -10495,7 +10564,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return h;
   }
   function toolsAfter() {
-    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || S.tool === "cm" || !toolDoc(S.tool)) return;
+    if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || S.tool === "cm" || S.tool === "ae" || !toolDoc(S.tool)) return;
     if (S.tool === "bz") bzUpdate();
     else if (S.tool === "ix") {
       ixSuggest();
@@ -10586,7 +10655,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     }
   }
   function toolMarkdown() {
-    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || S.tool === "cm") return "";
+    if (S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || S.tool === "cm" || S.tool === "ae") return "";
     return S.tool === "dx"
       ? dxMarkdown()
       : S.tool === "sc"
@@ -10652,6 +10721,14 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       lsSet("pu-cv", S.tool);
       renderHeader();
       renderTools();
+      return;
+    }
+    const as = e.target.closest("[data-aes]");
+    if (as) {
+      S.ae.s = as.dataset.aes;
+      const L = $("ae-list");
+      if (L) L.innerHTML = aeListHTML();
+      document.querySelectorAll("[data-aes]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.aes === S.ae.s)));
       return;
     }
     const om = e.target.closest("[data-ogm]");
@@ -10723,7 +10800,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   });
   $("main").addEventListener("input", (e) => {
     if (S.tab !== "tools") return;
-    if (e.target.id === "og-q") {
+    if (e.target.id === "ae-q") {
+      S.ae.q = e.target.value;
+      const L = $("ae-list");
+      if (L) L.innerHTML = aeListHTML();
+    } else if (e.target.id === "og-q") {
       S.og.q = e.target.value;
       const L = $("og-list");
       if (L) L.innerHTML = ogListHTML();
