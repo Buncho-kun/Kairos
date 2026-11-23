@@ -2952,6 +2952,11 @@ textarea {
 .pg-tg { font-size:12px; color:var(--sub); }
 .pt-es { display:grid; gap:8px; padding:10px 12px; border-radius:10px; background:var(--press); box-shadow:inset 0 0 0 1px var(--rule); }
 .pt-es .pt-core { font-weight:600; }
+.pt-sc { padding:8px 0; border-top:1px solid var(--rule); }
+.pt-sc:first-child { border-top:0; }
+.pt-sc-l .note { margin:2px 0 6px; }
+.pt-sc-b { display:flex; flex-wrap:wrap; gap:6px; }
+.pt-j { font:inherit; font-size:.85em; padding:5px 10px; border-radius:999px; border:1px solid var(--rule); background:var(--press); color:inherit; cursor:pointer; }
 .pg-sf .fold > summary { padding:8px 0; font-size:12.5px; color:var(--sub); }
 .pg-sf .fold .fb { padding:0 0 2px; gap:6px; }
 .rn-b.ev-w { color:var(--ink); background:var(--press); font-weight:500; }
@@ -10033,10 +10038,10 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const talk = arr(es.talk), tips = arr(es.tips);
     if (!es.core && !talk.length && !tips.length) return "";
     return (
-      '<div class="pt-es"><span class="pg-h">エッセンス</span>' +
+      '<div class="pt-es"><span class="pg-h">診察で意識すること</span>' +
       (es.core ? '<p class="pt-core">' + mdInline(es.core) + "</p>" : "") +
-      (talk.length ? '<div><span class="pg-h">面接で話すこと</span>' + ulHTML(talk) + "</div>" : "") +
-      (tips.length ? '<div><span class="pg-h">進め方のコツ</span>' + ulHTML(tips) + "</div>" : "") +
+      (talk.length ? '<div><span class="pg-h">言い方の例</span>' + ulHTML(talk) + "</div>" : "") +
+      (tips.length ? '<div><span class="pg-h">押さえどころ</span>' + ulHTML(tips) + "</div>" : "") +
       "</div>"
     );
   }
@@ -10079,12 +10084,31 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       })
       .join("");
   }
+  function ptSceneHTML(d) {
+    const sc = arr(d.scenes);
+    if (!sc.length) return "";
+    const by = {};
+    arr(d.list).forEach((x) => (by[x.id] = x));
+    return sc
+      .map(
+        (s) =>
+          '<div class="pt-sc"><div class="pt-sc-l"><b>' + esc(s.l) + "</b>" +
+          (s.t ? '<p class="note">' + esc(s.t) + "</p>" : "") + '</div><div class="pt-sc-b">' +
+          arr(s.ids)
+            .filter((i) => by[i])
+            .map((i) => '<button type="button" class="pt-j" data-ptjump="' + esc(i) + '">' + esc(by[i].n) + "</button>")
+            .join("") +
+          "</div></div>",
+      )
+      .join("");
+  }
   function ptHTML() {
     const d = TD.pt || {};
     return (
       '<p class="hint">よく使われる精神療法の対象、形式、進め方、根拠の強さ、国内の保険、マニュアルです。開くと詳細が出ます。</p>' +
       '<div class="folds pg-intro">' +
       pgIntroHTML("t:pti", d, "見方と国内の保険", "根拠の印・認知療法・認知行動療法") +
+      (arr(d.scenes).length ? fold("t:ptsc", "場面から選ぶ", "診察でよくある場面と、使う技法", ptSceneHTML(d), true) : "") +
       "</div>" +
       '<section class="tcard"><label class="sr" for="pt-q">精神療法を探す</label><input id="pt-q" class="field big" type="search" enterkeyhint="search" placeholder="名前・対象で探す（例：うつ病、PTSD、家族）" autocomplete="off" value="' +
       esc(S.pt.q) +
@@ -10810,6 +10834,17 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         }
         el.scrollIntoView({ behavior: "smooth", block: "start" });
       }
+      return;
+    }
+    const tj = e.target.closest("[data-ptjump]");
+    if (tj) {
+      const id = tj.dataset.ptjump;
+      S.pt.k = "all";
+      S.pt.q = "";
+      S.folds["t:pt:" + id] = true;
+      renderTools();
+      const el = document.querySelector('[data-fold="t:pt:' + id + '"]');
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     const pj = e.target.closest("[data-pgjump]");
