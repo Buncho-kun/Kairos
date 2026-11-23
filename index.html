@@ -2913,6 +2913,10 @@ textarea {
 .cm-t td.v b { font-weight:700; }
 .cm-t .ci { display:block; color:var(--sub); font-size:11px; }
 .cm-t .sig { color:var(--accent); }
+.tl-pills { flex-wrap:wrap; }
+.pg-why { font-size:12px; font-weight:700; color:var(--accent); margin:10px 2px 2px; }
+.pg-per { margin:-4px 0 10px 14px; font-size:12px; color:var(--sub); }
+.pgk.pgm { margin-bottom:6px; }
 .cm-sel { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .rn-b.none { color:var(--ok); box-shadow:inset 0 0 0 1px var(--ok); }
 .rn-q { display:block; font-style:normal; font-weight:500; font-size:10.5px; color:var(--sub); }
@@ -3891,10 +3895,10 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         $("tseg").innerHTML =
           '<button type="button" class="tnav" data-tstep="-1" aria-label="前のツール">‹</button>' +
           '<select id="tsel" aria-label="ツールを選ぶ">' +
-          TOOLS.map(([k, l], j) => '<option value="' + k + '"' + (j === i ? " selected" : "") + ">" + esc(l) + "</option>").join("") +
+          visTools().map(([k, l], j) => '<option value="' + k + '"' + (j === i ? " selected" : "") + ">" + esc(l) + "</option>").join("") +
           "</select>" +
           '<button type="button" class="tnav" data-tstep="1" aria-label="次のツール">›</button>' +
-          '<div class="tpos">' + (i + 1) + " / " + TOOLS.length + "　左右にスワイプで切り替え</div>";
+          '<div class="tpos">' + (i + 1) + " / " + visTools().length + "　左右にスワイプで切り替え</div>";
       })();
     $("hmode").hidden = !man;
     if (man) {
@@ -4556,6 +4560,13 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       return;
     }
     if (S.tab === "tools") {
+      const cur = S.tool === "cp" || S.tool === "bz" ? "cv" : S.tool;
+      if (!visTools().some((t) => t[0] === cur)) {
+        const f = visTools()[0][0];
+        S.tool = f === "cv" ? "cp" : f;
+        lsSet("pu-tool", S.tool);
+        renderHeader();
+      }
       renderTools();
       return;
     }
@@ -6629,6 +6640,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
           "</button>",
       ).join("") +
       "</div></div></section>";
+    const off = toolsOff();
+    h +=
+      '<section class="panel"><h2>ツールの表示</h2><div class="pb"><p class="note">押してオフにしたツールは、ツールタブの一覧とスワイプから外れます。</p><div class="pills tl-pills" role="group" aria-label="表示するツール">' +
+      TOOLS.map(([k, l]) => '<button type="button" data-tooloff="' + k + '" aria-pressed="' + !off.includes(k) + '">' + esc(l) + "</button>").join("") +
+      "</div></div></section>";
     if (window.KairosPush) h += window.KairosPush.html();
     if (window.KairosDevice) h += window.KairosDevice.html();
     h += '<section class="panel"><h2>自動収集</h2><div class="pb">';
@@ -6774,6 +6790,16 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         renderMain();
       }),
     );
+    document.querySelectorAll("[data-tooloff]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const k = b.dataset.tooloff;
+        let off = toolsOff();
+        off = off.includes(k) ? off.filter((x) => x !== k) : off.concat(k);
+        if (off.length >= TOOLS.length) return;
+        lsSet("pu-tools-off", JSON.stringify(off));
+        b.setAttribute("aria-pressed", String(!off.includes(k)));
+      }),
+    );
     document.querySelectorAll("[data-zoom]").forEach((b) =>
       b.addEventListener("click", () => {
         S.zoom = b.dataset.zoom;
@@ -6796,6 +6822,18 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     ["kampo", "漢方"],
     ["ccr", "CCr計算"],
   ];
+  function toolsOff() {
+    try {
+      return JSON.parse(lsGet("pu-tools-off", "[]")) || [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function visTools() {
+    const off = toolsOff();
+    const v = TOOLS.filter((t) => !off.includes(t[0]));
+    return v.length ? v : TOOLS;
+  }
   const TOOL_DB = ["cp", "bz", "ix", "ccr", "preg", "kampo", "pt", "ps", "og", "cm"];
   const TOOL_DOC = { cp: "cp", bz: "bz", ix: "ix", ccr: "renal", preg: "preg", kampo: "kampo", pt: "pt", ps: "psytest", og: "organ", cm: "cmp" };
   const TD = {};
@@ -9904,7 +9942,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   };
   if (!["cat", "sym"].includes(S.dx.view)) S.dx.view = "cat";
   if (!["ja", "both", "en"].includes(S.dx.lang)) S.dx.lang = "ja";
-  S.pg = { q: "", k: "all" };
+  S.pg = { q: "", k: "all", m: lsGet("pu-pgm", "kind"), u: "dep", t: "t1" };
   S.kp = { q: "" };
   const PG_P = { ci: ["ci", "禁忌"], avoid: ["dose", "原則避ける"], ben: ["care", "有益性投与"] };
   const PG_L = { avoid: ["dose", "授乳を避ける"], cons: ["care", "継続か中止を検討"] };
@@ -10241,10 +10279,58 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         pgSrcHTML(x.src),
     );
   }
+  function pgPeriodLines(x, per) {
+    const re = new RegExp(per.re);
+    const lines = [x.p && x.p.t].concat(arr(x.ev)).filter((s) => s && re.test(s));
+    if (per.k === "lac") lines.unshift(x.l && x.l.t);
+    return lines.filter(Boolean);
+  }
+  function pgSubHTML() {
+    const d = TD.preg || {};
+    if (S.pg.m === "use")
+      return arr(d.uses).map((u) => '<button type="button" data-pgu="' + esc(u.k) + '" aria-pressed="' + (S.pg.u === u.k) + '">' + esc(u.l) + "</button>").join("");
+    if (S.pg.m === "period")
+      return arr(d.periods).map((u) => '<button type="button" data-pgt="' + esc(u.k) + '" aria-pressed="' + (S.pg.t === u.k) + '">' + esc(u.l) + "</button>").join("");
+    return [["all", "すべて"]]
+      .concat(arr(d.cats).map((c) => [c.k, c.l]))
+      .map(([k, l]) => '<button type="button" data-pgk="' + esc(k) + '" aria-pressed="' + (S.pg.k === k) + '">' + esc(l) + "</button>")
+      .join("");
+  }
   function pregListHTML() {
     const d = TD.preg;
     if (!d) return "";
     const q = toKata(String(S.pg.q || "").trim());
+    const hit = (x) => !q || toKata(x.n + (x.b || "")).includes(q);
+    const byId = {};
+    arr(d.drugs).forEach((x) => (byId[x.id] = x));
+    if (S.pg.m === "use") {
+      const u = arr(d.uses).find((y) => y.k === S.pg.u) || arr(d.uses)[0];
+      if (!u) return "";
+      const rows = arr(u.items).filter(([id]) => byId[id] && hit(byId[id]));
+      return (
+        '<p class="note">' + esc(u.note) + "</p>" +
+        (rows.length
+          ? rows.map(([id, why]) => '<div class="pg-why">' + esc(why) + "</div>" + pregRowHTML(byId[id])).join("")
+          : '<p class="note">該当する薬はありません。</p>')
+      );
+    }
+    if (S.pg.m === "period") {
+      const per = arr(d.periods).find((y) => y.k === S.pg.t) || arr(d.periods)[0];
+      if (!per) return "";
+      const PR = { ben: 0, cons: 0, avoid: 1, ci: 2 };
+      const xs = arr(d.drugs).filter(hit).map((x) => ({ x, ls: pgPeriodLines(x, per) }));
+      const lv = (o) => (per.k === "lac" ? PR[o.x.l && o.x.l.lv] || 0 : PR[o.x.p && o.x.p.lv] || 0);
+      const quiet = xs.filter((o) => (per.k === "lac" ? o.ls.length <= 1 : !o.ls.length) && !lv(o));
+      const flagged = xs.filter((o) => !quiet.includes(o)).sort((a, b) => lv(a) - lv(b));
+      const row = (o) => pregRowHTML(o.x) + (o.ls.length ? '<ul class="pg-per">' + o.ls.map((s) => "<li>" + esc(s) + "</li>").join("") + "</ul>" : "");
+      return (
+        '<p class="note">' + esc(per.note) + "</p>" +
+        (flagged.length ? '<div class="rn-g"><div class="lbl">この時期に記載・報告がある薬（' + flagged.length + "）</div>" + flagged.map(row).join("") + "</div>" : "") +
+        (quiet.length
+          ? '<div class="rn-g"><div class="lbl">この時期に特有の記載がこの表にない薬（' + quiet.length + '）</div><p class="note">安全という意味ではありません。全期間の記載は開いて確認してください。</p>' + quiet.map(row).join("") + "</div>"
+          : "")
+      );
+    }
     const xs = arr(d.drugs).filter(
       (x) => (S.pg.k === "all" || x.k === S.pg.k) && (!q || toKata(x.n + (x.b || "")).includes(q)),
     );
@@ -10267,20 +10353,12 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "</div>" +
       '<section class="tcard"><label class="sr" for="pg-q">薬を探す</label><input id="pg-q" class="field big" type="search" enterkeyhint="search" placeholder="薬・商品名で探す（ひらがな可）" autocomplete="off" value="' +
       esc(S.pg.q) +
-      '"><div class="pgk" role="group" aria-label="分類">' +
-      [["all", "すべて"]]
-        .concat(arr(d.cats).map((c) => [c.k, c.l]))
-        .map(
-          ([k, l]) =>
-            '<button type="button" data-pgk="' +
-            esc(k) +
-            '" aria-pressed="' +
-            (S.pg.k === k) +
-            '">' +
-            esc(l) +
-            "</button>",
-        )
+      '"><div class="pgk pgm" role="group" aria-label="並べ方">' +
+      [["kind", "薬の種類"], ["use", "用途"], ["period", "時期"]]
+        .map(([k, l]) => '<button type="button" data-pgm="' + k + '" aria-pressed="' + (S.pg.m === k) + '">' + l + "</button>")
         .join("") +
+      '</div><div class="pgk" id="pg-sub" role="group" aria-label="絞り込み">' +
+      pgSubHTML() +
       "</div></section>" +
       '<p class="rn-lg"><span class="rn-b ci">禁忌</span><span class="rn-b dose">原則避ける</span><span class="rn-b care">有益性投与・検討</span><span class="rn-b tga">TGA分類</span></p>' +
       '<div id="pg-list">' +
@@ -10525,7 +10603,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   }
   function toolIdx() {
     const k = S.tool === "cp" || S.tool === "bz" ? "cv" : S.tool;
-    return Math.max(0, TOOLS.findIndex((t) => t[0] === k));
+    return Math.max(0, visTools().findIndex((t) => t[0] === k));
   }
   function goTool(k, dir) {
     S.tool = k === "cv" ? (lsGet("pu-cv", "cp") === "bz" ? "bz" : "cp") : k;
@@ -10537,8 +10615,8 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     if (dir && M.animate) M.animate([{ transform: "translateX(" + dir * 24 + "px)", opacity: 0.4 }, { transform: "none", opacity: 1 }], { duration: 180, easing: "ease-out" });
   }
   function stepTool(d) {
-    const n = TOOLS.length;
-    goTool(TOOLS[(toolIdx() + d + n) % n][0], d);
+    const V = visTools(), n = V.length;
+    goTool(V[(toolIdx() + d + n) % n][0], d);
   }
   $("tseg").addEventListener("click", (e) => {
     const b = e.target.closest("[data-tstep]");
@@ -10600,6 +10678,21 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       document
         .querySelectorAll("[data-ptk]")
         .forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ptk === S.pt.k)));
+      return;
+    }
+    const pm = e.target.closest("[data-pgm],[data-pgu],[data-pgt]");
+    if (pm) {
+      if (pm.dataset.pgm) {
+        S.pg.m = pm.dataset.pgm;
+        lsSet("pu-pgm", S.pg.m);
+        document.querySelectorAll("[data-pgm]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.pgm === S.pg.m)));
+      }
+      if (pm.dataset.pgu) S.pg.u = pm.dataset.pgu;
+      if (pm.dataset.pgt) S.pg.t = pm.dataset.pgt;
+      const sub = $("pg-sub");
+      if (sub) sub.innerHTML = pgSubHTML();
+      const L = $("pg-list");
+      if (L) L.innerHTML = pregListHTML();
       return;
     }
     const k = e.target.closest("[data-pgk]");
