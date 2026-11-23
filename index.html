@@ -2914,6 +2914,11 @@ textarea {
 .cm-t .ci { display:block; color:var(--sub); font-size:11px; }
 .cm-t .sig { color:var(--accent); }
 .tl-pills { flex-wrap:wrap; }
+.pg-pick { display:grid; gap:3px; width:100%; text-align:left; border:0; border-bottom:1px solid var(--rule); background:none; padding:9px 4px; color:var(--ink); font:inherit; }
+.pg-pick .pp-n span { margin-left:6px; font-size:12px; color:var(--sub); }
+.pg-pick .pp-w { font-size:12.5px; color:var(--accent); }
+.pg-nav { margin:4px 0 8px; }
+[data-fold] { scroll-margin-top:70px; }
 .pg-why { font-size:12px; font-weight:700; color:var(--accent); margin:10px 2px 2px; }
 .pg-per { margin:-4px 0 10px 14px; font-size:12px; color:var(--sub); }
 .pgk.pgm { margin-bottom:6px; }
@@ -9943,7 +9948,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   };
   if (!["cat", "sym"].includes(S.dx.view)) S.dx.view = "cat";
   if (!["ja", "both", "en"].includes(S.dx.lang)) S.dx.lang = "ja";
-  S.pg = { q: "", k: "all", m: lsGet("pu-pgm", "kind"), u: "dep", t: "t1" };
+  S.pg = { q: "", k: "all", m: lsGet("pu-pgm", "kind") === "period" ? "period" : "kind", u: "dep", t: "t1" };
   S.kp = { q: "" };
   const PG_P = { ci: ["ci", "禁忌"], avoid: ["dose", "原則避ける"], ben: ["care", "有益性投与"] };
   const PG_L = { avoid: ["dose", "授乳を避ける"], cons: ["care", "継続か中止を検討"] };
@@ -10401,35 +10406,71 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     );
     if (!xs.length) return '<p class="note">該当する薬はありません。</p>';
     return arr(d.cats)
+      .filter((c) => S.pg.k === "all" || c.k === S.pg.k)
       .map((c) => {
         const a = xs.filter((x) => x.k === c.k);
-        return a.length
-          ? '<div class="rn-g"><div class="lbl">' + esc(c.l) + "</div>" + a.map(pregRowHTML).join("") + "</div>"
-          : "";
+        return a.length ? fold("t:pgc:" + c.k, esc(c.l), a.length + "剤", a.map(pregRowHTML).join(""), !!q || S.pg.k !== "all") : "";
       })
       .join("");
+  }
+  function pgUseHTML() {
+    const d = TD.preg || {};
+    const byId = {};
+    arr(d.drugs).forEach((x) => (byId[x.id] = x));
+    return (
+      '<div class="pgk" role="group" aria-label="用途へ移動">' +
+      arr(d.uses).map((u) => '<button type="button" data-pgnav="t:pgu:' + esc(u.k) + '">' + esc(u.l) + "</button>").join("") +
+      "</div>" +
+      arr(d.uses)
+        .map((u) => {
+          const rows = arr(u.items)
+            .filter(([id]) => byId[id])
+            .map(([id, why]) => {
+              const x = byId[id],
+                pp = PG_P[x.p && x.p.lv],
+                ll = PG_L[x.l && x.l.lv];
+              return (
+                '<button type="button" class="pg-pick" data-pgjump="' + esc(id) + '"><span class="pp-n"><b>' + esc(x.n) + "</b>" + (x.b ? "<span>" + esc(x.b) + "</span>" : "") + "</span>" +
+                '<span class="pp-w">' + esc(why) + "</span>" +
+                '<span class="pg-bs">' + (pp ? '<span class="pg-t">妊娠</span><span class="rn-b ' + pp[0] + '">' + pp[1] + "</span>" : "") + (ll ? '<span class="pg-t">授乳</span><span class="rn-b ' + ll[0] + '">' + ll[1] + "</span>" : "") + "</span></button>"
+              );
+            })
+            .join("");
+          return fold("t:pgu:" + u.k, esc(u.l), arr(u.items).length + "剤", '<p class="note">' + esc(u.note) + "</p>" + rows + '<p class="note">押すと「薬ごとの解説」のその薬に移動します。</p>');
+        })
+        .join("")
+    );
   }
   function pregHTML() {
     const d = TD.preg || {};
     return (
-      '<p class="hint">妊婦・授乳婦への電子添文の記載と海外の扱いを、薬ごとに並べています。開くと根拠と出典が出ます。</p>' +
-      '<div class="folds pg-intro">' +
-      pgIntroHTML("t:pgi", d, "基準と解説", "産科GL・センター・海外") +
-      "</div>" +
-      '<section class="tcard"><label class="sr" for="pg-q">薬を探す</label><input id="pg-q" class="field big" type="search" enterkeyhint="search" placeholder="薬・商品名で探す（ひらがな可）" autocomplete="off" value="' +
-      esc(S.pg.q) +
-      '"><div class="pgk pgm" role="group" aria-label="並べ方">' +
-      [["kind", "薬の種類"], ["use", "用途"], ["period", "時期"]]
-        .map(([k, l]) => '<button type="button" data-pgm="' + k + '" aria-pressed="' + (S.pg.m === k) + '">' + l + "</button>")
+      '<p class="hint">「選びやすい薬」は用途ごとの推奨順、「薬ごとの解説」は電子添文と根拠です。見出しを押すと開閉します。</p>' +
+      '<div class="pgk pg-nav" role="group" aria-label="移動">' +
+      [["t:pgA", "選びやすい薬"], ["t:pgB", "薬ごとの解説"], ["t:pgi", "基準と解説"], ["t:pg2", "出典"]]
+        .map(([k, l]) => '<button type="button" data-pgnav="' + k + '">' + l + "</button>")
         .join("") +
-      '</div><div class="pgk" id="pg-sub" role="group" aria-label="絞り込み">' +
-      pgSubHTML() +
-      "</div></section>" +
-      '<p class="rn-lg"><span class="rn-b ci">禁忌</span><span class="rn-b dose">原則避ける</span><span class="rn-b care">有益性投与・検討</span><span class="rn-b tga">TGA分類</span></p>' +
-      '<div id="pg-list">' +
-      pregListHTML() +
       "</div>" +
       '<div class="folds">' +
+      fold("t:pgA", "選びやすい薬（用途別）", "うつ病・不安・不眠・双極症・授乳中", pgUseHTML(), true) +
+      fold(
+        "t:pgB",
+        "薬ごとの解説",
+        (arr(d.drugs).length || 0) + "剤",
+        '<section class="tcard"><label class="sr" for="pg-q">薬を探す</label><input id="pg-q" class="field big" type="search" enterkeyhint="search" placeholder="薬・商品名で探す（ひらがな可）" autocomplete="off" value="' +
+          esc(S.pg.q) +
+          '"><div class="pgk pgm" role="group" aria-label="並べ方">' +
+          [["kind", "薬の種類"], ["period", "時期"]]
+            .map(([k, l]) => '<button type="button" data-pgm="' + k + '" aria-pressed="' + (S.pg.m === k) + '">' + l + "</button>")
+            .join("") +
+          '</div><div class="pgk" id="pg-sub" role="group" aria-label="絞り込み">' +
+          pgSubHTML() +
+          "</div></section>" +
+          '<p class="rn-lg"><span class="rn-b ci">禁忌</span><span class="rn-b dose">原則避ける</span><span class="rn-b care">有益性投与・検討</span><span class="rn-b tga">TGA分類</span></p>' +
+          '<div id="pg-list">' +
+          pregListHTML() +
+          "</div>",
+      ) +
+      pgIntroHTML("t:pgi", d, "基準と解説", "産科GL・センター・海外") +
       fold("t:pg2", "出典と更新履歴", "", toolSrcHTML("preg")) +
       "</div>"
     );
@@ -10755,6 +10796,36 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       document
         .querySelectorAll("[data-ptk]")
         .forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.ptk === S.pt.k)));
+      return;
+    }
+    const nv = e.target.closest("[data-pgnav]");
+    if (nv) {
+      const el = document.querySelector('[data-fold="' + nv.dataset.pgnav + '"]');
+      if (el) {
+        el.open = true;
+        let p = el.parentElement && el.parentElement.closest("details");
+        while (p) {
+          p.open = true;
+          p = p.parentElement && p.parentElement.closest("details");
+        }
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      return;
+    }
+    const pj = e.target.closest("[data-pgjump]");
+    if (pj) {
+      const id = pj.dataset.pgjump;
+      const x = arr((TD.preg || {}).drugs).find((y) => y.id === id);
+      if (!x) return;
+      S.pg.m = "kind";
+      S.pg.k = "all";
+      S.pg.q = "";
+      S.folds["t:pgB"] = true;
+      S.folds["t:pgc:" + x.k] = true;
+      S.folds["t:pg:" + id] = true;
+      renderTools();
+      const el = document.querySelector('[data-fold="t:pg:' + id + '"]');
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
     const pm = e.target.closest("[data-pgm],[data-pgu],[data-pgt]");
