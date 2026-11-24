@@ -95,7 +95,8 @@
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(a.refresh),
       });
-      j = await r.json();
+      j = await r.json().catch(() => ({}));
+      if (!r.ok) lsSet(LS_AUTH, null);
       if (r.ok) {
         tok = { id: j.id_token, uid: j.user_id, exp: Date.now() + (+j.expires_in || 3600) * 1000 };
         lsSet(LS_AUTH, JSON.stringify({ uid: j.user_id, refresh: j.refresh_token }));
@@ -107,8 +108,18 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ returnSecureToken: true }),
     });
-    j = await r.json();
-    if (!r.ok) throw new Error("端末の確認に失敗しました（" + r.status + "）");
+    j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const m = String((j.error && j.error.message) || "");
+      const why = /ADMIN_ONLY_OPERATION|OPERATION_NOT_ALLOWED/.test(m)
+        ? "サーバー側で端末の登録が止まっています。管理者に連絡してください"
+        : /TOO_MANY_ATTEMPTS/.test(m)
+          ? "短時間に試行が多すぎます。1時間ほどおいて試してください"
+          : /API_KEY|API key/i.test(m)
+            ? "アプリの設定に問題があります。管理者に連絡してください"
+            : "時間をおいて試してください";
+      throw new Error("端末の確認に失敗しました（" + r.status + (m ? " " + m.split(" ")[0] : "") + "）。" + why);
+    }
     tok = { id: j.idToken, uid: j.localId, exp: Date.now() + (+j.expiresIn || 3600) * 1000 };
     lsSet(LS_AUTH, JSON.stringify({ uid: j.localId, refresh: j.refreshToken }));
     return tok;
@@ -121,7 +132,11 @@
     const t = await idToken();
     const r = await fetch(fsBase() + "/" + path, { headers: { Authorization: "Bearer " + t.id }, cache: "no-store" });
     if (r.status === 403 || r.status === 404) return { status: r.status };
-    if (!r.ok) throw new Error("通信に失敗しました（" + r.status + "）");
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const m = String((j.error && (j.error.status || j.error.message)) || "");
+      throw new Error("通信に失敗しました（" + r.status + (m ? " " + m.split(" ")[0] : "") + "）");
+    }
     return { status: 200, doc: await r.json() };
   }
   async function fsWrite(path, mask, transforms) {
