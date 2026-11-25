@@ -5,6 +5,12 @@ on:
     - cron: "40 22 * * *" # 毎朝 7:40（日本時間）。収集のあと
     - cron: "10 9 * * *" # 夕方 18:10（日本時間）
   workflow_dispatch:
+  workflow_run:
+    workflows: ["アクセスコード"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths: [".github/health/**", ".github/workflows/health.yml"]
 
 permissions:
   contents: read
