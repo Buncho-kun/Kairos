@@ -1,0 +1,39 @@
+name: 報告の通知
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *" # 15分おき
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/health/feedback.mjs", ".github/workflows/feedback.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feedback
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            .github/codes/package.json
+            .github/notify/package.json
+      - name: 準備
+        run: |
+          cd .github/codes && npm install --no-audit --no-fund
+          cd ../notify && npm install --no-audit --no-fund
+      - name: 通知
+        run: node .github/health/feedback.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}

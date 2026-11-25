@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 const require = createRequire(new URL("../codes/package.json", import.meta.url));
 const { initializeApp, cert } = require("firebase-admin/app");
-const { getFirestore, Timestamp } = require("firebase-admin/firestore");
+const { getFirestore } = require("firebase-admin/firestore");
 
 const env = process.env;
 const cfg = fs.readFileSync("push-config.js", "utf8");
@@ -119,14 +119,6 @@ try {
   if (!p.ok) fail("公開サイトが開けません（" + p.status + "）");
 } catch (e) {
   fail("公開サイトに届きません：" + e.message);
-}
-
-// 6. この1日に届いた報告
-let fb = 0;
-if (db) {
-  const since = Timestamp.fromMillis(Date.now() - 24 * 36e5);
-  fb = (await db.collection("kx_feedback").where("at", ">", since).get()).size;
-  if (fb) notes.push(`報告が${fb}件届いています（設定→管理）`);
 }
 
 // 管理者の端末に知らせる（問題なしで報告もなければ送らない）
