@@ -3368,10 +3368,22 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
 #kx-gate input{width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border:1px solid #9ab;border-radius:6px}
 #kx-gate button{margin-top:12px;width:100%;font-size:15px;padding:10px;border:0;border-radius:6px;background:#0b4f6c;color:#fff}
 #kx-gate .kx-e{min-height:1.2em;margin:10px 0 0;font-size:13px;color:#a33}
+#kx-agree{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(6,22,32,.86);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);padding:20px}
+#kx-agree form{width:100%;max-width:380px;max-height:90vh;overflow:auto;background:#fff;color:#123;border-radius:10px;padding:20px 18px;box-shadow:0 8px 30px rgba(0,0,0,.35);font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif}
+#kx-agree .kx-t{margin:0 0 10px;font-size:16px;font-weight:600}
+#kx-agree ol{margin:0;padding-left:1.3em;font-size:14px;line-height:1.7}
+#kx-agree li{margin-bottom:8px}
+#kx-agree button{margin-top:10px;width:100%;font-size:15px;padding:11px;border:0;border-radius:6px;background:#0b4f6c;color:#fff}
+#kx-rep textarea,#kx-rep input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:8px 10px;margin-top:8px;border:1px solid var(--rule);border-radius:6px;background:transparent;color:inherit}
+.kx-tbl{width:100%;border-collapse:collapse;font-size:.88em;margin:6px 0}
+.kx-tbl th,.kx-tbl td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--rule)}
+.kx-fb{padding:8px 0;border-bottom:1px solid var(--rule)}
+.kx-fb p{margin:4px 0 6px;white-space:pre-wrap}
+.kx-fb-del{font:inherit;font-size:.8em;padding:3px 10px;border-radius:999px;border:1px solid var(--rule);background:transparent;color:inherit}
 </style>
-<script src="kx.js?v=4"></script>
+<script src="kx.js?v=5"></script>
 <script src="push-config.js?v=2"></script>
-<script src="push.js?v=1"></script>
+<script src="push.js?v=2"></script>
 
 </head>
 <body>
@@ -3467,7 +3479,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         <details class="fold" id="memo" hidden>
           <summary>院内メモ<span class="s">自分だけに表示</span></summary>
           <div class="fb">
-            <p class="note">搬送先の電話番号、夜間に使える機器、院内の取り決めなど。</p>
+            <p class="note">搬送先の電話番号、夜間に使える機器、院内の取り決めなど。患者さんの氏名・IDなど個人が分かる情報は書かないでください。</p>
             <label for="memo-text" class="sr">院内メモ</label>
             <textarea id="memo-text" rows="4" placeholder="例：救急搬送は○○病院（電話 0X-XXXX-XXXX）。夜間も迅速抗原検査あり。"></textarea>
             <div class="row"><button class="btn" id="memo-save" type="button">メモを保存</button><span class="note" id="memo-state"></span></div>
@@ -6660,6 +6672,8 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "</div></div></section>";
     if (window.KairosPush) h += window.KairosPush.html();
     if (window.KairosDevice) h += window.KairosDevice.html();
+    if (window.KairosReport) h += window.KairosReport.html();
+    if (window.KairosAdmin) h += window.KairosAdmin.html();
     h += '<section class="panel"><h2>自動収集</h2><div class="pb">';
     h +=
       '<dl class="facts"><dt>最終収集</dt><dd class="mono">' +
@@ -6795,6 +6809,8 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   function bindInfo() {
     if (window.KairosPush) window.KairosPush.bind();
     if (window.KairosDevice) window.KairosDevice.bind();
+    if (window.KairosReport) window.KairosReport.bind(() => "最後に見たツール：" + ((TOOLS.find((t) => t[0] === S.tool) || [])[1] || ""));
+    if (window.KairosAdmin) window.KairosAdmin.bind();
     document.querySelectorAll("[data-theme-set]").forEach((b) =>
       b.addEventListener("click", () => {
         S.theme = b.dataset.themeSet;

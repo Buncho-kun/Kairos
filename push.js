@@ -73,6 +73,17 @@
     });
     if (!r.ok && r.status !== 409) throw new Error("保存に失敗しました（" + r.status + "）");
     lsSet(j.endpoint);
+    // 管理者の端末は、点検の失敗や報告の到着も受け取る
+    try {
+      if (localStorage.getItem("kx-mode") === "owner") {
+        await fetch(url.replace("/kairos_subs?", "/kairos_owner_subs?"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        localStorage.setItem("kx-push-own", j.endpoint);
+      }
+    } catch (e) {}
   }
   async function reg() {
     return navigator.serviceWorker.register("sw.js", { scope: "./" });
@@ -193,7 +204,11 @@
     try {
       if (!supported || Notification.permission !== "granted") return;
       var s = await current();
-      if (s && s.endpoint !== lsGet()) await save(s);
+      var own = false;
+      try {
+        own = localStorage.getItem("kx-mode") === "owner" && localStorage.getItem("kx-push-own") !== (s && s.endpoint);
+      } catch (e) {}
+      if (s && (s.endpoint !== lsGet() || own)) await save(s);
     } catch (e) {}
   }
 

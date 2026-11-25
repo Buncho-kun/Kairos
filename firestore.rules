@@ -5,7 +5,18 @@ service cloud.firestore {
 
     // 通知の購読（端末が自分で登録する。読み出しと削除は送信ジョブだけ）
     match /kairos_subs/{id} {
-      allow create: if true;
+      allow create: if subShape();
+    }
+    // 管理者の端末の購読（点検の失敗・報告の到着を知らせる）
+    match /kairos_owner_subs/{id} {
+      allow create: if subShape();
+    }
+    function subShape() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['endpoint', 'p256dh', 'auth', 'ua', 'created'])
+        && d.endpoint is string && d.endpoint.size() < 1000 && d.endpoint.matches('https://.*')
+        && d.p256dh is string && d.p256dh.size() < 200
+        && d.auth is string && d.auth.size() < 100;
     }
 
     // アクセスコードごとの登録端末（1コード3台まで）
@@ -28,6 +39,28 @@ service cloud.firestore {
             || (request.resource.data.keys().hasOnly(['b', 'at'])
                 && request.resource.data.b is string
                 && request.resource.data.b.size() < 800000));
+    }
+
+    // 誤り・要望の報告（端末で暗号化した塊。登録された端末が送り、管理者の端末だけが読める）
+    match /kx_feedback/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['b', 'cid', 'at'])
+        && request.resource.data.b is string
+        && request.resource.data.b.size() < 20000
+        && request.resource.data.cid is string
+        && request.resource.data.at == request.time
+        && request.auth.uid in get(/databases/$(database)/documents/kx_slots/$(request.resource.data.cid)).data.devices;
+      allow read, delete: if request.auth != null && isOwner();
+    }
+
+    // 管理者の枠の場所（端末からは読めない。ルールの中でだけ使う）
+    match /kx_admin/{id} {
+      allow read, write: if false;
+    }
+
+    function isOwner() {
+      let oc = get(/databases/$(database)/documents/kx_admin/owner).data.cid;
+      return request.auth.uid in get(/databases/$(database)/documents/kx_slots/$(oc)).data.devices;
     }
 
     function slotChange() {

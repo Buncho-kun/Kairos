@@ -29,7 +29,7 @@
     );
     return new Uint8Array(bits);
   }
-  const imp = (raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  const imp = (raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt", "encrypt"]);
   async function decBuf(key, buf) {
     const u = new Uint8Array(buf);
     if (u[0] !== 75 || u[1] !== 88 || u[2] !== 49) throw new Error("bad file");
@@ -318,7 +318,30 @@
           } else note = "通信できないため開けませんでした。電波のある場所で一度開くと、次からは電波がなくても開けます。";
         }
         return new Promise((res) => gate(meta, res, note));
-      }));
+      }).then(agree));
+  }
+  /* first use on this device: show the terms once */
+  const LS_AGREE = "kx-agree";
+  function agree(k) {
+    if (lsGet(LS_AGREE) === "1") return k;
+    return new Promise((res) => {
+      const w = document.createElement("div");
+      w.id = "kx-agree";
+      w.innerHTML =
+        '<form><p class="kx-t">使う前に確認してください</p><ol>' +
+        "<li>内容は診療の参考情報です。処方や判断の前に、電子添文や原典を確かめてください。最終的な判断は担当医が行います。</li>" +
+        "<li>メモ欄や報告欄に、患者さんの氏名・IDなど個人が分かる情報を書かないでください。</li>" +
+        "<li>アクセスコードは本人専用です。ほかの人に渡さないでください。</li>" +
+        "<li>誤りや古い記載に気づいたら、設定の「誤り・要望の報告」から知らせてください。</li>" +
+        '</ol><button type="submit">同意して使う</button></form>';
+      document.body.appendChild(w);
+      w.querySelector("form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        lsSet(LS_AGREE, "1");
+        w.remove();
+        res(k);
+      });
+    });
   }
 
   /* settings panel: this device's registration */
@@ -355,6 +378,197 @@
           b.disabled = false;
         }
       };
+    },
+  };
+  /* ---- 誤り・要望の報告（データ鍵で暗号化して送る。読めるのは管理者の端末だけ） ---- */
+  async function seal(key, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, ENC.encode(JSON.stringify(obj))));
+    const all = new Uint8Array(12 + ct.length);
+    all.set(iv);
+    all.set(ct, 12);
+    return b64e(all);
+  }
+  async function unseal(key, b64) {
+    const b = b64d(b64);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, key, b.slice(12));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  const isOwner = () => lsGet(LS_MODE) === "owner";
+  const fmtAt = (ms) => {
+    if (!ms) return "未使用";
+    const d = new Date(ms);
+    return d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  };
+  const escH = (t) => String(t == null ? "" : t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  window.KairosReport = {
+    html() {
+      if (!lsGet(LS_SYNC)) return "";
+      return (
+        '<section class="panel" id="kx-rep"><h2>誤り・要望の報告</h2><div class="pb">' +
+        '<p class="note">内容の誤り、古い記載、使いにくい点を管理者に送れます。患者さんの個人情報は書かないでください。</p>' +
+        '<label class="sr" for="kx-rep-t">報告の内容</label>' +
+        '<textarea id="kx-rep-t" rows="4" maxlength="2000" placeholder="例：ツール「相互作用」の○○と△△の組み合わせ。添付文書では併用注意になっている。"></textarea>' +
+        '<label class="sr" for="kx-rep-n">名前（任意）</label>' +
+        '<input id="kx-rep-n" type="text" maxlength="40" placeholder="名前（任意）" autocomplete="off">' +
+        '<div class="pills"><button type="button" id="kx-rep-send">送信</button></div>' +
+        '<p class="note" id="kx-rep-msg" role="status"></p></div></section>'
+      );
+    },
+    bind(ctx) {
+      const b = document.getElementById("kx-rep-send");
+      if (!b) return;
+      const nm = document.getElementById("kx-rep-n");
+      nm.value = lsGet("kx-rep-name") || "";
+      b.onclick = async () => {
+        const ta = document.getElementById("kx-rep-t");
+        const msg = document.getElementById("kx-rep-msg");
+        const text = ta.value.trim();
+        if (!text) return (msg.textContent = "内容を入力してください。");
+        b.disabled = true;
+        msg.textContent = "送信しています…";
+        try {
+          const k = await getKey();
+          const cid = lsGet(LS_SYNC);
+          lsSet("kx-rep-name", nm.value.trim() || null);
+          const blob = await seal(k, {
+            text,
+            name: nm.value.trim(),
+            where: typeof ctx === "function" ? ctx() : "",
+            ua: /iP(hone|ad)/.test(navigator.userAgent) ? "iPhone/iPad" : /Android/.test(navigator.userAgent) ? "Android" : "PC",
+          });
+          const t = await idToken();
+          const id = hex(crypto.getRandomValues(new Uint8Array(10)));
+          const r = await fetch(fsBase() + ":commit", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + t.id, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              writes: [
+                {
+                  update: { name: docName("kx_feedback/" + id), fields: { b: { stringValue: blob }, cid: { stringValue: cid } } },
+                  updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+                  currentDocument: { exists: false },
+                },
+              ],
+            }),
+          });
+          if (!r.ok) throw new Error(String(r.status));
+          ta.value = "";
+          msg.textContent = "送信しました。ありがとうございます。";
+        } catch (x) {
+          msg.textContent = "送信できませんでした（" + (x && x.message) + "）。通信状況を確かめて、もう一度お試しください。";
+        }
+        b.disabled = false;
+      };
+    },
+  };
+  /* ---- 管理者用：コードの利用状況と、届いた報告 ---- */
+  async function ownerCodes() {
+    const kek = b64d(lsGet(LS_KEY));
+    const r = await fetch("data/codes.enc", { cache: "no-cache" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const lst = JSON.parse(await decBuf(await imp(kek), await r.arrayBuffer()));
+    const out = [];
+    for (const c of lst) {
+      if (!c.n || !c.code) continue;
+      const cid = await codeId(c.code);
+      let devices = [];
+      try {
+        const s = await fsGet("kx_slots/" + cid);
+        if (s.status === 200) devices = slotInfo(s.doc).devices;
+        else devices = null;
+      } catch (x) {
+        devices = undefined; // 通信できず
+      }
+      out.push({ n: c.n, label: c.label || "", code: c.code, cid, devices });
+    }
+    return out;
+  }
+  async function ownerFeedback(codes) {
+    const t = await idToken();
+    const r = await fetch(fsBase() + "/kx_feedback?pageSize=300", {
+      headers: { Authorization: "Bearer " + t.id },
+      cache: "no-store",
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    const j = await r.json();
+    const k = await getKey();
+    const out = [];
+    for (const d of j.documents || []) {
+      const f = d.fields || {};
+      const cid = (f.cid && f.cid.stringValue) || "";
+      const c = codes.find((x) => x.cid === cid);
+      let body = null;
+      try {
+        body = await unseal(k, f.b.stringValue);
+      } catch (x) {}
+      out.push({
+        id: d.name.split("/").pop(),
+        at: Date.parse((f.at && f.at.timestampValue) || 0) || 0,
+        from: c ? c.n + "番" + (c.label ? " " + c.label : "") : cid === lsGet(LS_SYNC) ? "管理者" : "不明なコード",
+        body,
+      });
+    }
+    return out.sort((a, b) => b.at - a.at);
+  }
+  window.KairosAdmin = {
+    html() {
+      if (!isOwner()) return "";
+      return '<section class="panel" id="kx-adm"><h2>管理</h2><div class="pb" id="kx-adm-b"><p class="note">読み込んでいます…</p></div></section>';
+    },
+    async bind() {
+      const el = document.getElementById("kx-adm-b");
+      if (!el) return;
+      let codes = [];
+      let h = "";
+      try {
+        codes = await ownerCodes();
+        h +=
+          '<p class="lbl">コードの利用状況</p><table class="kx-tbl"><thead><tr><th>番号</th><th>名前</th><th>台数</th><th>最後に使った日時</th></tr></thead><tbody>' +
+          codes
+            .map((c) => {
+              const last = c.devices && c.devices.length ? Math.max.apply(null, c.devices.map((d) => d.at)) : 0;
+              return (
+                "<tr><td>" + c.n + "</td><td>" + (escH(c.label) || "—") + "</td><td>" +
+                (c.devices ? c.devices.length + "/3" : c.devices === null ? "未反映" : "確認できず") + "</td><td>" + (c.devices ? fmtAt(last) : "—") + "</td></tr>"
+              );
+            })
+            .join("") +
+          '</tbody></table><p class="note">名前の変更・コードの追加と停止はClaudeに頼んでください。「未反映」はサーバーにまだ登録されていないコードです。</p>';
+      } catch (x) {
+        h += '<p class="note">コードの一覧を読めませんでした（' + escH(x && x.message) + "）。</p>";
+      }
+      try {
+        const fb = await ownerFeedback(codes);
+        h +=
+          '<p class="lbl">届いた報告（' + fb.length + "件）</p>" +
+          (fb.length
+            ? fb
+                .map(
+                  (f) =>
+                    '<div class="kx-fb"><div class="note">' + fmtAt(f.at) + "　" + escH(f.from) +
+                    (f.body && f.body.name ? "（" + escH(f.body.name) + "）" : "") +
+                    (f.body && f.body.where ? "　" + escH(f.body.where) : "") +
+                    (f.body && f.body.ua ? "　" + escH(f.body.ua) : "") +
+                    "</div><p>" + (f.body ? escH(f.body.text) : "（読めませんでした）") +
+                    '</p><button type="button" class="kx-fb-del" data-fbdel="' + f.id + '">対応済みにして消す</button></div>',
+                )
+                .join("")
+            : '<p class="note">まだありません。</p>');
+      } catch (x) {
+        h += '<p class="note">報告を読めませんでした（' + escH(x && x.message) + "）。この端末が管理者として登録されていない可能性があります。</p>";
+      }
+      el.innerHTML = h;
+      el.querySelectorAll("[data-fbdel]").forEach((b) => {
+        b.onclick = async () => {
+          if (!window.confirm("この報告を消します。よろしいですか？")) return;
+          b.disabled = true;
+          const t = await idToken();
+          const r = await fetch(fsBase() + "/kx_feedback/" + b.dataset.fbdel, { method: "DELETE", headers: { Authorization: "Bearer " + t.id } });
+          if (r.ok) b.closest(".kx-fb").remove();
+          else b.disabled = false;
+        };
+      });
     },
   };
   async function fetchDec(path) {

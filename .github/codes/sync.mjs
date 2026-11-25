@@ -40,6 +40,8 @@ const codes = JSON.parse(
   execFileSync("python3", ["tools/kdb.py", "slots"], { encoding: "utf8", env: { ...env } }),
 );
 const keep = new Set(codes.map((c) => c.cid));
+const own = codes.find((c) => c.n === 0);
+if (own) await db.collection("kx_admin").doc("owner").set({ cid: own.cid });
 for (const c of codes) {
   await db.collection("kx_keys").doc(c.cid).set({ w: c.w });
   const ref = db.collection("kx_slots").doc(c.cid);

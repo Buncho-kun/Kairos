@@ -1,0 +1,35 @@
+name: 点検
+
+on:
+  schedule:
+    - cron: "40 22 * * *" # 毎朝 7:40（日本時間）。収集のあと
+    - cron: "10 9 * * *" # 夕方 18:10（日本時間）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 準備
+        run: |
+          pip install --quiet cryptography
+          cd .github/codes && npm install --no-audit --no-fund
+          cd ../notify && npm install --no-audit --no-fund
+      - name: 点検
+        run: node .github/health/check.mjs
+        env:
+          KAIROS_PASS: ${{ secrets.KAIROS_PASS }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
