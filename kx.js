@@ -226,11 +226,20 @@
     return { k: await openWith(kek, meta), kek };
   }
 
+  const iosBrowser = () => {
+    const ua = navigator.userAgent || "";
+    const ios = /iP(hone|od|ad)/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const alone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+    return ios && !alone;
+  };
   function gate(meta, resolve, note) {
     const w = document.createElement("div");
     w.id = "kx-gate";
     w.innerHTML =
       '<form><p class="kx-t">アクセスコードを入力してください</p>' +
+      (iosBrowser()
+        ? '<p class="kx-h">iPhone・iPadの方へ：先に、共有ボタン（四角から矢印が出ている印）→「ホーム画面に追加」を行い、ホーム画面のアイコンから開いてコードを入れてください。ここで入れると、登録できる3台のうち1台分を余計に使います。</p>'
+        : "") +
       '<input type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false">' +
       '<button type="submit">開く</button><p class="kx-e" role="alert"></p></form>';
     document.body.appendChild(w);
