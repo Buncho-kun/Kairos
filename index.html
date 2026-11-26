@@ -5357,7 +5357,14 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       const GR = { A: 0, B: 1 };
       const evs = arr(S.items)
         .filter((it) => it.type !== "guideline" && it.cred && it.cred.grade in GR && (evIds.has(it.id) || arr(it.branchIds).some((b) => br.includes(b))))
-        .sort((a, b) => GR[a.cred.grade] - GR[b.cred.grade] || String(b.date || "").localeCompare(String(a.date || "")));
+        .sort((a, b) => {
+          // その疾患の定番として指定した研究（ev）を先頭に、次に信頼度、新しい順
+          const ia = arr(x.ev).indexOf(a.id),
+            ib = arr(x.ev).indexOf(b.id);
+          if ((ia < 0) !== (ib < 0)) return ia < 0 ? 1 : -1;
+          if (ia >= 0 && ib >= 0) return ia - ib;
+          return GR[a.cred.grade] - GR[b.cred.grade] || String(b.date || "").localeCompare(String(a.date || ""));
+        });
       const EVMAX = 8;
       const cut = (t, n) => (String(t).length > n ? String(t).slice(0, n) + "…" : String(t));
       const evH = evs.length
