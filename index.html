@@ -6990,6 +6990,12 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     if (window.KairosDevice) h += window.KairosDevice.html();
     if (window.KairosReport) h += window.KairosReport.html();
     if (window.KairosAdmin) h += window.KairosAdmin.html();
+    const ct = (TD || {}).contact;
+    if (ct && ct.tel)
+      h +=
+        '<section class="panel"><h2>困ったときの連絡先</h2><div class="pb"><p style="margin:0 0 6px"><a class="mono" style="font-size:1.25em;font-weight:700" href="tel:' +
+        esc(String(ct.tel).replace(/[^0-9+]/g, "")) + '">' + esc(ct.tel) + "</a></p>" +
+        '<p class="hint" style="margin:0">' + esc(ct.note || "") + "</p></div></section>";
     h += histHTML();
     h += '<section class="panel"><h2>自動収集</h2><div class="pb">';
     h +=
