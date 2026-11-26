@@ -4714,8 +4714,12 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const bar = e.target.closest("[data-barea]");
     if (bar && S.tab === "branch") {
       S.bArea = bar.dataset.barea;
-      lsSet("pu-barea", S.bArea);
       renderMain();
+      return;
+    }
+    const bsp = e.target.closest("[data-bstep]");
+    if (bsp && S.tab === "branch") {
+      bStep(+bsp.dataset.bstep);
       return;
     }
     const st = e.target.closest("[data-star]");
@@ -4755,16 +4759,6 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const gst = e.target.closest("[data-gstep]");
     if (gst) {
       glStep(+gst.dataset.gstep);
-      return;
-    }
-    const zg = e.target.closest("[data-dzgo]");
-    if (zg) {
-      S.dzDrug = "";
-      S.dzSel = zg.dataset.dzgo;
-      lsSet("pu-dz", S.dzSel);
-      if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
-      const t = document.querySelector(".dz");
-      if (t) t.scrollIntoView({ block: "start" });
       return;
     }
     const zb = e.target.closest("[data-dzbr]");
@@ -5428,46 +5422,6 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       const foot = chk ? '<p class="hint dz-chk">最終確認 <span class="mono">' + esc(chk) + "</span>（出典のガイドラインの要約と照合した日）</p>" : "";
       return '<div class="dz-one">' + warn + '<div class="dz-icds">' + icd + "</div>" + secs + evH + diff + links + foot + "</div>";
     };
-    // 薬から探す：ツールの薬剤名と dz.terms のうち、本文に出てくるもの
-    const rowsAll = d.list.flatMap((x) => arr(x.secs).flatMap((sc) => arr(sc.rows).map((r) => ({ x, h: sc.h, r }))));
-    const allTxt = rowsAll.map((o) => o.r.t).join("\n");
-    const dn = new Map();
-    const addN = (n, b) => {
-      n = String(n || "").replace(/（.*?）/g, "").trim();
-      if (n.length > 1 && !dn.has(n) && allTxt.includes(n)) dn.set(n, b || "");
-    };
-    [arr((TD.ix || {}).drugs), arr((TD.preg || {}).drugs), arr((TD.cmp || {}).drugs), arr((TD.cp || {}).oral), arr((TD.cp || {}).lai)].forEach((l) => l.forEach((z) => addN(z.n, z.b)));
-    arr(d.terms).forEach((n) => addN(n, ""));
-    arr(d.skip).forEach((n) => dn.delete(n));
-    const cls = arr(d.classes).filter((n) => allTxt.includes(n));
-    if (S.dzDrug === undefined) S.dzDrug = "";
-    const drugSel = dn.size
-      ? '<label class="sr" for="dz-drug">薬から探す</label><select id="dz-drug" class="field dz-sel" data-dzdrug><option value="">薬から探す（' + (dn.size + cls.length) + "）</option>" +
-        '<optgroup label="薬">' +
-        [...dn.keys()].sort((a, b) => a.localeCompare(b, "ja")).map((n) => '<option value="' + esc(n) + '"' + (S.dzDrug === n ? " selected" : "") + ">" + esc(n + (dn.get(n) ? "（" + dn.get(n) + "）" : "")) + "</option>").join("") +
-        "</optgroup>" +
-        (cls.length ? '<optgroup label="薬の種類">' + cls.map((n) => '<option value="' + esc(n) + '"' + (S.dzDrug === n ? " selected" : "") + ">" + esc(n) + "</option>").join("") + "</optgroup>" : "") +
-        "</select>"
-      : "";
-    const drugRes = () => {
-      const q = S.dzDrug;
-      const hits = rowsAll.filter((o) => o.r.t.includes(q));
-      const ids = [...new Set(hits.map((o) => o.x.id))];
-      return (
-        '<div class="dz-one"><p class="hint">「' + esc(q) + "」が出てくる行（" + ids.length + "疾患・" + hits.length + "行）。疾患名を押すと、その疾患のページが開く。</p>" +
-        ids
-          .map((id) => {
-            const hs = hits.filter((o) => o.x.id === id);
-            return (
-              '<h4 class="dz-h"><button type="button" class="dz-go" data-dzgo="' + esc(id) + '">' + esc(hs[0].x.n) + " ›</button></h4><ul class=\"dz-rows\">" +
-              hs.map((o) => '<li><span><small class="dz-sec">' + esc(o.h) + "</small>" + mdInline(esc(o.r.t).split(esc(q)).join("**" + esc(q) + "**")) + "</span>" + srcBtn(o.r) + "</li>").join("") +
-              "</ul>"
-            );
-          })
-          .join("") +
-        "</div>"
-      );
-    };
     if (S.dzSel === undefined) S.dzSel = lsGet("pu-dz") || "";
     const cur = d.list.find((x) => x.id === S.dzSel);
     const areas = [...new Set(d.list.map((x) => x.area || ""))];
@@ -5480,7 +5434,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
             '<optgroup label="' + esc(a) + '">' +
             d.list
               .filter((x) => (x.area || "") === a)
-              .map((x) => '<option value="' + esc(x.id) + '"' + (!S.dzDrug && cur && cur.id === x.id ? " selected" : "") + ">" + esc(x.n) + "</option>")
+              .map((x) => '<option value="' + esc(x.id) + '"' + (cur && cur.id === x.id ? " selected" : "") + ">" + esc(x.n) + "</option>")
               .join("") +
             "</optgroup>",
         )
@@ -5488,7 +5442,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "</select>";
     return (
       '<h2 class="grp"><i style="--ac:var(--accent)"></i>疾患別の治療<span>' + d.list.length + "疾患</span></h2>" +
-      '<div class="dz">' + sel + drugSel + (S.dzDrug && dn.size ? drugRes() : cur ? one(cur) : '<p class="hint">' + esc(d.intro || "") + "</p>") + "</div>"
+      '<div class="dz">' + sel + (cur ? one(cur) : '<p class="hint">' + esc(d.intro || "") + "</p>") + "</div>"
     );
   }
   let GL_AREAS = [];
@@ -5507,15 +5461,14 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   document.addEventListener("change", (e) => {
     const gs = e.target.closest && e.target.closest("[data-gsel]");
     if (gs) return glArea(gs.value);
-    const dg = e.target.closest && e.target.closest("[data-dzdrug]");
-    if (dg) {
-      S.dzDrug = dg.value;
-      if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
+    const bs = e.target.closest && e.target.closest("[data-bsel]");
+    if (bs) {
+      S.bArea = bs.value;
+      renderMain();
       return;
     }
     const el = e.target.closest && e.target.closest("[data-dzsel]");
     if (!el) return;
-    S.dzDrug = "";
     S.dzSel = el.value;
     lsSet("pu-dz", el.value || null);
     if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
@@ -6243,32 +6196,34 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     });
     return n;
   }
-  function bAreaCur(n) {
-    return S.bArea && n[S.bArea] ? S.bArea : "";
+  function bAreaKeys(n) {
+    return AREAS.filter((a) => n[a]).concat(Object.keys(n).filter((a) => !AREAS.includes(a)));
   }
+  function bAreaCur(n) {
+    return S.bArea && n[S.bArea] ? S.bArea : "目次";
+  }
+  // 領域の切り替え：目次から始まり、プルダウン・‹ ›・左右スワイプで移る
   function bAreaHTML() {
     const n = bAreaCounts();
-    const ks = AREAS.filter((a) => n[a]).concat(Object.keys(n).filter((a) => !AREAS.includes(a)));
-    if (ks.length < 2) return "";
+    const ks = ["目次"].concat(bAreaKeys(n));
+    if (ks.length < 3) return "";
     const cur = bAreaCur(n);
+    const i = ks.indexOf(cur);
     return (
-      '<div class="pills dcls barea" role="group" aria-label="領域で絞り込む">' +
-      [""]
-        .concat(ks)
-        .map(
-          (k) =>
-            '<button type="button" data-barea="' +
-            esc(k) +
-            '" aria-pressed="' +
-            (cur === k) +
-            '">' +
-            esc(k || "すべて") +
-            (k ? ' <span class="mono">' + n[k] + "</span>" : "") +
-            "</button>",
-        )
-        .join("") +
-      "</div>"
+      '<div class="gnav"><button type="button" class="gnav-b" data-bstep="-1" aria-label="前の領域">‹</button>' +
+      '<label class="sr" for="b-sel">領域を選ぶ</label><select id="b-sel" class="field big" data-bsel>' +
+      ks.map((k) => '<option value="' + esc(k) + '"' + (k === cur ? " selected" : "") + ">" + esc(k) + (k === "目次" ? "" : "（" + n[k] + "件）") + "</option>").join("") +
+      '</select><button type="button" class="gnav-b" data-bstep="1" aria-label="次の領域">›</button></div>' +
+      '<p class="hint gnav-h">' + (i + 1) + " / " + ks.length + "　左右にスワイプで切り替え</p>"
     );
+  }
+  function bStep(d) {
+    const ks = ["目次"].concat(bAreaKeys(bAreaCounts()));
+    let i = ks.indexOf(bAreaCur(bAreaCounts()));
+    S.bArea = ks[(i + d + ks.length) % ks.length];
+    renderMain();
+    const nv = document.querySelector(".gnav");
+    if (nv && nv.getBoundingClientRect().top < 0) nv.scrollIntoView({ block: "start" });
   }
   function bqWords() {
     return String(S.bQ || "")
@@ -6352,8 +6307,19 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   function branchListHTML() {
     const words = bqWords();
     let shown = S.branches.filter(bKindOk);
-    const curArea = bAreaCur(bAreaCounts());
-    if (curArea) shown = shown.filter((b) => (b.area || "制度・その他") === curArea);
+    const bN = bAreaCounts();
+    const curArea = bAreaCur(bN);
+    if (curArea === "目次" && !words.length) {
+      // 目次ページ：領域ごとの件数を並べる
+      return (
+        '<div class="gtoc">' +
+        bAreaKeys(bN)
+          .map((a) => '<button type="button" class="gtoc-b" data-barea="' + esc(a) + '"><i style="--ac:' + areaVar(a) + '"></i><b>' + esc(a) + "</b><span>" + bN[a] + "件</span></button>")
+          .join("") +
+        "</div>"
+      );
+    }
+    if (curArea !== "目次") shown = shown.filter((b) => (b.area || "制度・その他") === curArea);
     const done = shown.filter((b) => b.status !== "候補"),
       cand = shown.filter((b) => b.status === "候補");
     const order = (a) => {
@@ -6406,8 +6372,8 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
           '<div class="notice">「' +
           esc(S.bQ.trim()) +
           "」を含む分岐点は見つかりません。" +
-          (S.bKind !== "all" || curArea
-            ? "上の切り替えを「すべて」にすると広く探せます。"
+          (S.bKind !== "all" || curArea !== "目次"
+            ? "種類を「すべて」、領域を「目次」にすると広く探せます。"
             : "別の言い方（一般名、病名の一部、ICD-11コードなど）でも試してください。") +
           "</div>"
         );
@@ -11136,7 +11102,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const M = $("main");
     M.addEventListener("touchstart", (e) => {
       x0 = null;
-      if ((S.tab !== "tools" && !(S.tab === "guide" && !String(S.glQ || "").trim())) || e.touches.length !== 1) return;
+      if ((S.tab !== "tools" && !(S.tab === "guide" && !String(S.glQ || "").trim()) && !(S.tab === "branch" && !String(S.bQ || "").trim())) || e.touches.length !== 1) return;
       const el = e.target;
       if (el.closest("input,select,textarea,.cm-t,.tscroll,[data-noswipe]")) return;
       for (let n = el; n && n !== M; n = n.parentElement) if (n.scrollWidth > n.clientWidth + 4 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return;
@@ -11148,6 +11114,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       x0 = null;
       if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 700) {
         if (S.tab === "guide") glStep(dx < 0 ? 1 : -1);
+        else if (S.tab === "branch") bStep(dx < 0 ? 1 : -1);
         else stepTool(dx < 0 ? 1 : -1);
       }
     }, { passive: true });
@@ -12029,8 +11996,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   S.bQ = "";
   S.bKind = lsGet("pu-bkind", "all");
   if (!["all", "dx", "tx"].includes(S.bKind)) S.bKind = "all";
-  S.bArea = lsGet("pu-barea", "");
-  if (S.bArea && !AREAS.includes(S.bArea)) S.bArea = "";
+  S.bArea = "目次";
   const PERIODS = ["30", "90", "365", "all"];
   S.period = lsGet("pu-period", "30");
   if (!PERIODS.includes(S.period)) S.period = "30";
