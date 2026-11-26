@@ -2963,6 +2963,11 @@ textarea {
 .gtoc-b i { flex:0 0 4px; align-self:stretch; border-radius:2px; background:var(--ac); }
 .gtoc-b b { flex:1; font-weight:600; font-size:.92em; }
 .gtoc-b span { font-size:.8em; opacity:.7; white-space:nowrap; }
+.ttoc { display:grid; grid-template-columns:1fr; gap:8px; margin:10px 0 14px; }
+@media (min-width:640px) { .ttoc { grid-template-columns:1fr 1fr; } }
+.ttoc-b { display:block; text-align:left; font:inherit; padding:12px 13px; border:1px solid var(--rule); border-radius:8px; background:var(--press); color:inherit; cursor:pointer; }
+.ttoc-b b { display:block; font-weight:700; font-size:1em; }
+.ttoc-b span { display:block; margin-top:2px; font-size:.84em; line-height:1.5; opacity:.75; }
 .gnav-h { text-align:center; margin:2px 0 6px; }
 .dz-sel { width:100%; margin:4px 0 10px; }
 .dz-one { padding-bottom:6px; }
@@ -3953,14 +3958,16 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     $("tseg").hidden = !tools;
     if (tools)
       (() => {
-        const i = toolIdx();
+        const toc = S.tool === "toc";
+        const i = toc ? -1 : toolIdx();
         $("tseg").innerHTML =
           '<button type="button" class="tnav" data-tstep="-1" aria-label="前のツール">‹</button>' +
           '<select id="tsel" aria-label="ツールを選ぶ">' +
+          '<option value="toc"' + (toc ? " selected" : "") + ">目次</option>" +
           visTools().map(([k, l], j) => '<option value="' + k + '"' + (j === i ? " selected" : "") + ">" + esc(l) + "</option>").join("") +
           "</select>" +
           '<button type="button" class="tnav" data-tstep="1" aria-label="次のツール">›</button>' +
-          '<div class="tpos">' + (i + 1) + " / " + visTools().length + "　左右にスワイプで切り替え</div>";
+          '<div class="tpos">' + (i + 2) + " / " + (visTools().length + 1) + "　左右にスワイプで切り替え</div>";
       })();
     $("hmode").hidden = !man;
     if (man) {
@@ -4623,7 +4630,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     }
     if (S.tab === "tools") {
       const cur = S.tool === "cp" || S.tool === "bz" ? "cv" : S.tool;
-      if (!visTools().some((t) => t[0] === cur)) {
+      if (S.tool !== "toc" && !visTools().some((t) => t[0] === cur)) {
         const f = visTools()[0][0];
         S.tool = f === "cv" ? "cp" : f;
         lsSet("pu-tool", S.tool);
@@ -10254,9 +10261,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return L.join("\n").replace(/\n{3,}/g, "\n\n");
   }
 
-  S.tool = lsGet("pu-tool", "cp");
-  if (!TOOLS.some((t) => t[0] === S.tool) && S.tool !== "cp" && S.tool !== "bz") S.tool = "cp";
-  if (S.tool === "cv") S.tool = "cp";
+  S.tool = "toc"; // ツールは毎回、目次から始める
   S.cp = { rows: [{ d: "ris", mg: "", wk: "" }], tg: "olz", tot: 0, n: 0 };
   S.bz = { rows: [{ d: "eti", mg: "" }], tg: "dzp", filt: "all", sort: "t", tot: 0, n: 0 };
   S.ix = { sel: [], q: "" };
@@ -10901,7 +10906,32 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "</div>"
     );
   }
+  // ツールの目次：それぞれ何ができるかを一言で
+  const TOOL_DESC = {
+    dx: "ICD-11の診断に必要な特徴と鑑別。病名・コード・症状から探す",
+    sc: "PHQ-9、GAD-7、HAM-Dなど。答えを押すと合計点と目安が出る",
+    cv: "抗精神病薬のCP換算と、ベンゾジアゼピン系のBZ換算",
+    ix: "薬の組み合わせごとの注意。1剤なら注意が必要な相手",
+    pt: "精神療法の対象・進め方・根拠と、診察での言い方の例",
+    ps: "心理検査の対象、分かること、結果の読み方",
+    og: "腎機能・肝機能が悪い人での、電子添文上の扱い",
+    ae: "発作型ごとの薬の選び方、副作用、精神症状への影響",
+    cm: "抗精神病薬を2つ選んで、効果と副作用を並べて比べる",
+    preg: "妊娠中・授乳中に選びやすい薬と、薬ごとの解説",
+    kampo: "精神科で使う漢方薬の使いどころと、注意する生薬",
+    ccr: "クレアチニンクリアランスの計算と、腎機能で量が変わる薬",
+  };
+  function toolTocHTML() {
+    return (
+      '<div class="tool"><p class="hint">使うツールを押してください。上の名前を押すか、左右にスワイプしても切り替わります。</p><div class="ttoc">' +
+      visTools()
+        .map(([k, l]) => '<button type="button" class="ttoc-b" data-tgo="' + k + '"><b>' + esc(l) + "</b><span>" + esc(TOOL_DESC[k] || "") + "</span></button>")
+        .join("") +
+      '</div><p class="hint">使わないツールは、設定の「ツールの表示」で外せます。</p></div>'
+    );
+  }
   function toolsHTML() {
+    if (S.tool === "toc") return toolTocHTML();
     let h = '<div class="tool">';
     if (S.tool === "sc")
       return (
@@ -10970,6 +11000,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     return h;
   }
   function toolsAfter() {
+    if (S.tool === "toc") return;
     if (S.tool === "dx" || S.tool === "sc" || S.tool === "preg" || S.tool === "kampo" || S.tool === "pt" || S.tool === "ps" || S.tool === "og" || S.tool === "cm" || S.tool === "ae" || !toolDoc(S.tool)) return;
     if (S.tool === "bz") bzUpdate();
     else if (S.tool === "ix") {
@@ -11082,7 +11113,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   }
   function goTool(k, dir) {
     S.tool = k === "cv" ? (lsGet("pu-cv", "cp") === "bz" ? "bz" : "cp") : k;
-    lsSet("pu-tool", S.tool);
+    if (k !== "toc") lsSet("pu-tool", S.tool);
     renderHeader();
     renderTools();
     toTop();
@@ -11090,12 +11121,17 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     if (dir && M.animate) M.animate([{ transform: "translateX(" + dir * 24 + "px)", opacity: 0.4 }, { transform: "none", opacity: 1 }], { duration: 180, easing: "ease-out" });
   }
   function stepTool(d) {
-    const V = visTools(), n = V.length;
-    goTool(V[(toolIdx() + d + n) % n][0], d);
+    const V = [["toc", "目次"]].concat(visTools()), n = V.length;
+    const i = S.tool === "toc" ? 0 : toolIdx() + 1;
+    goTool(V[(i + d + n) % n][0], d);
   }
   $("tseg").addEventListener("click", (e) => {
     const b = e.target.closest("[data-tstep]");
     if (b) stepTool(+b.dataset.tstep);
+  });
+  $("main").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tgo]");
+    if (b && S.tab === "tools") goTool(b.dataset.tgo, 0);
   });
   $("tseg").addEventListener("change", (e) => {
     if (e.target.id === "tsel") goTool(e.target.value, 0);
