@@ -533,17 +533,19 @@
       try {
         codes = await ownerCodes();
         h +=
-          '<p class="lbl">コードの利用状況</p><table class="kx-tbl"><thead><tr><th>番号</th><th>名前</th><th>台数</th><th>最後に使った日時</th></tr></thead><tbody>' +
+          '<p class="lbl">コードの利用状況</p><table class="kx-tbl"><thead><tr><th>番号</th><th>名前</th><th>台数</th><th>最後に使った日時</th><th>コード</th></tr></thead><tbody>' +
           codes
             .map((c) => {
               const last = c.devices && c.devices.length ? Math.max.apply(null, c.devices.map((d) => d.at)) : 0;
               return (
                 "<tr><td>" + c.n + "</td><td>" + (escH(c.label) || "—") + "</td><td>" +
-                (c.devices ? c.devices.length + "/3" : c.devices === null ? "未反映" : "確認できず") + "</td><td>" + (c.devices ? fmtAt(last) : "—") + "</td></tr>"
+                (c.devices ? c.devices.length + "/3" : c.devices === null ? "未反映" : "確認できず") + "</td><td>" + (c.devices ? fmtAt(last) : "—") +
+                '</td><td><button type="button" class="btn kx-cs" data-kxshow="' + c.n + '">表示</button></td></tr>' +
+                '<tr class="kx-cr" data-kxrow="' + c.n + '" hidden><td colspan="5"><span class="mono kx-cv"></span> <button type="button" class="btn kx-cs" data-kxcopy="' + c.n + '">コピー</button></td></tr>'
               );
             })
             .join("") +
-          '</tbody></table><p class="note">名前の変更・コードの追加と停止はClaudeに頼んでください。「未反映」はサーバーにまだ登録されていないコードです。</p>';
+          '</tbody></table><p class="note">「表示」を押すと、その行のコードが出ます。もう一度押すと隠れます。まわりに人がいないときに開いてください。</p><p class="note">名前の変更・コードの追加と停止はClaudeに頼んでください。「未反映」はサーバーにまだ登録されていないコードです。</p>';
       } catch (x) {
         h += '<p class="note">コードの一覧を読めませんでした（' + escH(x && x.message) + "）。</p>";
       }
@@ -568,6 +570,29 @@
         h += '<p class="note">報告を読めませんでした（' + escH(x && x.message) + "）。この端末が管理者として登録されていない可能性があります。</p>";
       }
       el.innerHTML = h;
+      el.querySelectorAll("[data-kxshow]").forEach((b) => {
+        b.onclick = () => {
+          const row = el.querySelector('[data-kxrow="' + b.dataset.kxshow + '"]');
+          const c = codes.find((x) => String(x.n) === b.dataset.kxshow);
+          if (!row || !c) return;
+          row.hidden = !row.hidden;
+          row.querySelector(".kx-cv").textContent = row.hidden ? "" : c.code;
+          b.textContent = row.hidden ? "表示" : "隠す";
+        };
+      });
+      el.querySelectorAll("[data-kxcopy]").forEach((b) => {
+        b.onclick = async () => {
+          const c = codes.find((x) => String(x.n) === b.dataset.kxcopy);
+          if (!c) return;
+          try {
+            await navigator.clipboard.writeText(c.code);
+            b.textContent = "コピーしました";
+          } catch (x) {
+            b.textContent = "コピーできません";
+          }
+          setTimeout(() => (b.textContent = "コピー"), 1500);
+        };
+      });
       el.querySelectorAll("[data-fbdel]").forEach((b) => {
         b.onclick = async () => {
           if (!window.confirm("この報告を消します。よろしいですか？")) return;
