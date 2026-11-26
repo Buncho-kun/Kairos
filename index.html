@@ -2955,6 +2955,20 @@ textarea {
 .pg-ng { margin-top:10px; padding-top:8px; border-top:1px dashed var(--rule); }
 .pg-ngi { display:block; width:100%; text-align:left; font:inherit; font-size:.85em; padding:6px 0; background:none; border:0; color:inherit; opacity:.8; cursor:pointer; }
 .pg-ngi b { margin-right:8px; }
+.dz .fold { margin-bottom:8px; }
+.dz-icds { display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 4px; }
+.dz-icd { font:inherit; font-size:.8em; padding:3px 9px; border-radius:6px; border:1px solid var(--rule); background:transparent; color:inherit; }
+button.dz-icd { cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+.dz-h { margin:14px 0 4px; font-size:.95em; font-weight:700; }
+.dz-rows, .dz-diff { margin:0; padding:0; list-style:none; }
+.dz-rows li { padding:7px 0; border-top:1px solid var(--rule); }
+.dz-rows li:first-child { border-top:0; }
+.dz-rows li > span { display:block; }
+.dz-src { display:inline-block; margin-top:3px; font:inherit; font-size:.76em; padding:1px 8px; border-radius:999px; border:1px solid var(--rule); background:transparent; color:inherit; opacity:.85; cursor:pointer; text-align:left; }
+.dz-src.jp { border-color:var(--accent); }
+.dz-diff li { padding:4px 0 4px 1em; text-indent:-1em; font-size:.92em; }
+.dz-diff li::before { content:"・"; }
+.dz-links { display:flex; flex-wrap:wrap; gap:6px; }
 .pt-sc { padding:8px 0; border-top:1px solid var(--rule); }
 .pt-sc:first-child { border-top:0; }
 .pt-sc-l .note { margin:2px 0 6px; }
@@ -4709,6 +4723,39 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       openBranch(bc.dataset.branch);
       return;
     }
+    const zb = e.target.closest("[data-dzbr]");
+    if (zb) {
+      openBranch(zb.dataset.dzbr);
+      return;
+    }
+    const zd = e.target.closest("[data-dzdx]");
+    if (zd) {
+      S.tool = "dx";
+      lsSet("pu-tool", "dx");
+      S.dx.open = null;
+      S.dx.via = "";
+      S.dx.stack = [];
+      const code = zd.dataset.dzdx;
+      if (!dxValid(code)) S.dx.q = code; // 診断基準のデータが未読込・未収録なら、コードで検索した状態で開く
+      go("tools");
+      dxOpen(code);
+      return;
+    }
+    const zp = e.target.closest("[data-dzpt]");
+    if (zp) {
+      const id = zp.dataset.dzpt;
+      S.tool = "pt";
+      lsSet("pu-tool", "pt");
+      S.pt.k = "all";
+      S.pt.q = "";
+      S.folds["t:pt:" + id] = true;
+      go("tools");
+      setTimeout(() => {
+        const el = document.querySelector('[data-fold="t:pt:' + id + '"]');
+        if (el) el.scrollIntoView({ block: "start" });
+      }, 60);
+      return;
+    }
     const gc = e.target.closest("[data-guide]");
     if (gc) {
       openGuide(gc.dataset.guide, gc.classList.contains("glr") ? S.glQ : "");
@@ -5240,6 +5287,64 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const n = $("gd-n");
     if (n) n.textContent = S.gdIdx + 1 + "/" + ms.length + "件";
   }
+  /* 疾患別の治療：ガイドラインの推奨を疾患ごと・場面ごとに並べる（データは tools の dz） */
+  function dzHTML() {
+    const d = TD.dz;
+    if (!d || !arr(d.list).length) return "";
+    const wById = {};
+    S.watch.forEach((w) => (wById[w.id] = w));
+    const bById = {};
+    arr(S.branches).forEach((b) => (bById[b.id] = b));
+    const ptBy = {};
+    arr((TD.pt || {}).list).forEach((x) => (ptBy[x.id] = x));
+    const srcBtn = (r) => {
+      const w = wById[r.s];
+      const jp = w && w.region === "JP";
+      return (
+        '<button type="button" class="dz-src' + (jp ? " jp" : "") + '" data-guide="' + esc(r.s) + '">' +
+        (jp ? "国内 " : "海外 ") + esc((d.srcs || {})[r.s] || r.s) + (r.r ? "｜" + esc(r.r) : "") + "</button>"
+      );
+    };
+    const one = (x) => {
+      const icd = arr(x.icd)
+        .map((c) =>
+          c.nolink
+            ? '<span class="dz-icd">' + esc(c.c + " " + c.n) + "</span>"
+            : '<button type="button" class="dz-icd" data-dzdx="' + esc(c.c) + '">' + esc(c.c + " " + c.n) + "</button>",
+        )
+        .join("");
+      const secs = arr(x.secs)
+        .map(
+          (sc) =>
+            '<h4 class="dz-h">' + esc(sc.h) + '</h4><ul class="dz-rows">' +
+            arr(sc.rows).map((r) => "<li><span>" + mdInline(esc(r.t)) + "</span>" + srcBtn(r) + "</li>").join("") +
+            "</ul>",
+        )
+        .join("");
+      const diff = arr(x.diff).length
+        ? '<h4 class="dz-h">国内と海外で違う点</h4><ul class="dz-diff">' + arr(x.diff).map((t) => "<li>" + esc(t) + "</li>").join("") + "</ul>"
+        : "";
+      const br = arr(x.br).filter((i) => bById[i]);
+      const pts = arr(x.pt).filter((i) => ptBy[i]);
+      const links =
+        (br.length
+          ? '<h4 class="dz-h">迷いやすい場面（分岐点）</h4><div class="dz-links">' +
+            br.map((i) => '<button type="button" class="pt-j" data-dzbr="' + esc(i) + '">' + esc(bById[i].title) + "</button>").join("") +
+            "</div>"
+          : "") +
+        (pts.length
+          ? '<h4 class="dz-h">関連する精神療法</h4><div class="dz-links">' +
+            pts.map((i) => '<button type="button" class="pt-j" data-dzpt="' + esc(i) + '">' + esc(ptBy[i].n) + "</button>").join("") +
+            "</div>"
+          : "");
+      return fold("g:dz:" + x.id, esc(x.n), esc(arr(x.icd).map((c) => c.c).join("・")), '<div class="dz-icds">' + icd + "</div>" + secs + diff + links);
+    };
+    return (
+      '<h2 class="grp"><i style="--ac:var(--accent)"></i>疾患別の治療<span>' + d.list.length + "疾患</span></h2>" +
+      '<p class="hint">' + esc(d.intro || "") + "</p>" +
+      '<div class="dz">' + d.list.map(one).join("") + "</div>"
+    );
+  }
   function guidesListHTML() {
     if (S.loading && !S.watch.length) return '<div class="notice">読み込み中…</div>';
     let xs = S.watch.filter((w) => w.domain === "psy");
@@ -5279,6 +5384,8 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       );
     };
     let h =
+      dzHTML() +
+      '<h2 class="grp"><i style="--ac:var(--accent)"></i>ガイドライン別の要約</h2>' +
       '<p class="hint">精神科の主なガイドライン ' +
       xs.length +
       "件。要約があるのは " +
@@ -11862,6 +11969,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
             )
               renderTools();
           }
+          if (first && S.tab === "guide" && !String(S.glQ || "").trim() && $("gl-body")) $("gl-body").innerHTML = guidesListHTML();
         },
         (err) => {
           S.toolsErr = dbErr(err, true);
