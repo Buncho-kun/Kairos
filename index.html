@@ -5756,6 +5756,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       psy = xs.filter((m) => m.kind === "psy"),
       topics = xs.filter((m) => m.kind !== "common" && m.kind !== "overdose" && m.kind !== "psy");
     const ACUTE = [
+      "anaphylaxis",
       "consciousness-seizure",
       "chest-pain",
       "respiratory",
@@ -5766,8 +5767,10 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "dizziness",
       "fall",
       "rash",
+      "dehydration",
+      "edema",
     ];
-    const CHRONIC = ["blood-pressure", "glucose", "lipids", "gout-uric-acid"];
+    const CHRONIC = ["blood-pressure", "glucose", "lipids", "gout-uric-acid", "thyroid", "anemia", "liver"];
     const pos = (arr2, m) => {
       const i = arr2.indexOf(m.id);
       return i < 0 ? 99 : i;
