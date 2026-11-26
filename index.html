@@ -2958,6 +2958,11 @@ textarea {
 .gnav { display:flex; align-items:center; gap:6px; margin:6px 0 2px; scroll-margin-top:70px; }
 .gnav select { flex:1; min-width:0; }
 .gnav-b { flex:0 0 auto; width:40px; height:44px; font-size:22px; line-height:1; border:1px solid var(--rule); border-radius:8px; background:var(--press); color:inherit; cursor:pointer; }
+.gtoc { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
+.gtoc-b { display:flex; align-items:center; gap:8px; text-align:left; font:inherit; padding:11px 10px; border:1px solid var(--rule); border-radius:8px; background:var(--press); color:inherit; cursor:pointer; }
+.gtoc-b i { flex:0 0 4px; align-self:stretch; border-radius:2px; background:var(--ac); }
+.gtoc-b b { flex:1; font-weight:600; font-size:.92em; }
+.gtoc-b span { font-size:.8em; opacity:.7; white-space:nowrap; }
 .gnav-h { text-align:center; margin:2px 0 6px; }
 .dz-sel { width:100%; margin:4px 0 10px; }
 .dz-one { padding-bottom:6px; }
@@ -4728,6 +4733,13 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       openBranch(bc.dataset.branch);
       return;
     }
+    const gta = e.target.closest("[data-garea]");
+    if (gta) {
+      glArea(gta.dataset.garea);
+      const n = document.querySelector(".gnav");
+      if (n && n.getBoundingClientRect().top < 0) n.scrollIntoView({ block: "start" });
+      return;
+    }
     const gst = e.target.closest("[data-gstep]");
     if (gst) {
       glStep(+gst.dataset.gstep);
@@ -5375,7 +5387,6 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   let GL_AREAS = [];
   function glArea(a) {
     S.gArea = a;
-    lsSet("pu-garea", a);
     if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
   }
   function glStep(d) {
@@ -5460,7 +5471,8 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         (S.gReg === "all" || (S.gReg === "jp") === (w.region === "JP")),
     );
     if (body.length) groups.push({ a: "身体対応の根拠", ac: "var(--alert)", ys: body });
-    if (S.gArea === undefined) S.gArea = lsGet("pu-garea") || "";
+    groups.unshift({ a: "目次", toc: true, ys: [] });
+    if (S.gArea === undefined) S.gArea = "目次";
     let gi = groups.findIndex((g) => g.a === S.gArea);
     if (gi < 0) gi = 0;
     GL_AREAS = groups.map((g) => g.a);
@@ -5468,12 +5480,19 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     h +=
       '<div class="gnav"><button type="button" class="gnav-b" data-gstep="-1" aria-label="前の分野">‹</button>' +
       '<label class="sr" for="g-sel">分野を選ぶ</label><select id="g-sel" class="field big" data-gsel>' +
-      groups.map((g, k) => '<option value="' + esc(g.a) + '"' + (k === gi ? " selected" : "") + ">" + esc(g.a) + "（" + g.ys.length + "件）</option>").join("") +
+      groups.map((g, k) => '<option value="' + esc(g.a) + '"' + (k === gi ? " selected" : "") + ">" + esc(g.a) + (g.toc ? "" : "（" + g.ys.length + "件）") + "</option>").join("") +
       '</select><button type="button" class="gnav-b" data-gstep="1" aria-label="次の分野">›</button></div>' +
       '<p class="hint gnav-h">' + (gi + 1) + " / " + groups.length + "　左右にスワイプで切り替え</p>" +
-      '<h2 class="grp"><i style="--ac:' + cur.ac + '"></i>' + esc(cur.a) + "<span>" + cur.ys.length + '件</span></h2><div class="list">' +
-      cur.ys.map(row).join("") +
-      "</div>";
+      (cur.toc
+        ? '<div class="gtoc">' +
+          groups
+            .filter((g) => !g.toc)
+            .map((g) => '<button type="button" class="gtoc-b" data-garea="' + esc(g.a) + '"><i style="--ac:' + g.ac + '"></i><b>' + esc(g.a) + "</b><span>" + g.ys.length + "件</span></button>")
+            .join("") +
+          "</div>"
+        : '<h2 class="grp"><i style="--ac:' + cur.ac + '"></i>' + esc(cur.a) + "<span>" + cur.ys.length + '件</span></h2><div class="list">' +
+          cur.ys.map(row).join("") +
+          "</div>");
     return h;
   }
   function openGuide(id, q) {
