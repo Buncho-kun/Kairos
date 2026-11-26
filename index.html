@@ -2955,6 +2955,10 @@ textarea {
 .pg-ng { margin-top:10px; padding-top:8px; border-top:1px dashed var(--rule); }
 .pg-ngi { display:block; width:100%; text-align:left; font:inherit; font-size:.85em; padding:6px 0; background:none; border:0; color:inherit; opacity:.8; cursor:pointer; }
 .pg-ngi b { margin-right:8px; }
+.gnav { display:flex; align-items:center; gap:6px; margin:6px 0 2px; scroll-margin-top:70px; }
+.gnav select { flex:1; min-width:0; }
+.gnav-b { flex:0 0 auto; width:40px; height:44px; font-size:22px; line-height:1; border:1px solid var(--rule); border-radius:8px; background:var(--press); color:inherit; cursor:pointer; }
+.gnav-h { text-align:center; margin:2px 0 6px; }
 .dz-sel { width:100%; margin:4px 0 10px; }
 .dz-one { padding-bottom:6px; }
 .dz-icds { display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 4px; }
@@ -4724,6 +4728,11 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       openBranch(bc.dataset.branch);
       return;
     }
+    const gst = e.target.closest("[data-gstep]");
+    if (gst) {
+      glStep(+gst.dataset.gstep);
+      return;
+    }
     const zb = e.target.closest("[data-dzbr]");
     if (zb) {
       openBranch(zb.dataset.dzbr);
@@ -5363,7 +5372,23 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       '<div class="dz">' + sel + (cur ? one(cur) : '<p class="hint">' + esc(d.intro || "") + "</p>") + "</div>"
     );
   }
+  let GL_AREAS = [];
+  function glArea(a) {
+    S.gArea = a;
+    lsSet("pu-garea", a);
+    if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
+  }
+  function glStep(d) {
+    if (!GL_AREAS.length) return;
+    let i = GL_AREAS.indexOf(S.gArea);
+    if (i < 0) i = 0;
+    glArea(GL_AREAS[(i + d + GL_AREAS.length) % GL_AREAS.length]);
+    const n = document.querySelector(".gnav");
+    if (n && n.getBoundingClientRect().top < 0) n.scrollIntoView({ block: "start" });
+  }
   document.addEventListener("change", (e) => {
+    const gs = e.target.closest && e.target.closest("[data-gsel]");
+    if (gs) return glArea(gs.value);
     const el = e.target.closest && e.target.closest("[data-dzsel]");
     if (!el) return;
     S.dzSel = el.value;
@@ -5416,39 +5441,39 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "件。要約があるのは " +
       nSum +
       "件で、残りは毎朝の収集で本文を確認できたものから順に追加します。</p>";
-    areas.forEach((a) => {
-      const ys = xs
+    const groups = areas.map((a) => ({
+      a,
+      ac: areaVar(a),
+      ys: xs
         .filter((w) => (w.area || "横断・その他") === a)
         .sort(
           (p, q) =>
             rank(p) - rank(q) ||
             (p.region === "JP" ? 0 : 1) - (q.region === "JP" ? 0 : 1) ||
             String(q.versionDate || "").localeCompare(String(p.versionDate || "")),
-        );
-      h +=
-        '<h2 class="grp"><i style="--ac:' +
-        areaVar(a) +
-        '"></i>' +
-        esc(a) +
-        "<span>" +
-        ys.length +
-        '件</span></h2><div class="list">' +
-        ys.map(row).join("") +
-        "</div>";
-    });
+        ),
+    }));
     const body = S.watch.filter(
       (w) =>
         w.domain === "body" &&
         w.guide &&
         (S.gReg === "all" || (S.gReg === "jp") === (w.region === "JP")),
     );
-    if (body.length)
-      h +=
-        '<h2 class="grp"><i style="--ac:var(--alert)"></i>身体対応の根拠<span>' +
-        body.length +
-        '件</span></h2><div class="list">' +
-        body.map(row).join("") +
-        "</div>";
+    if (body.length) groups.push({ a: "身体対応の根拠", ac: "var(--alert)", ys: body });
+    if (S.gArea === undefined) S.gArea = lsGet("pu-garea") || "";
+    let gi = groups.findIndex((g) => g.a === S.gArea);
+    if (gi < 0) gi = 0;
+    GL_AREAS = groups.map((g) => g.a);
+    const cur = groups[gi];
+    h +=
+      '<div class="gnav"><button type="button" class="gnav-b" data-gstep="-1" aria-label="前の分野">‹</button>' +
+      '<label class="sr" for="g-sel">分野を選ぶ</label><select id="g-sel" class="field big" data-gsel>' +
+      groups.map((g, k) => '<option value="' + esc(g.a) + '"' + (k === gi ? " selected" : "") + ">" + esc(g.a) + "（" + g.ys.length + "件）</option>").join("") +
+      '</select><button type="button" class="gnav-b" data-gstep="1" aria-label="次の分野">›</button></div>' +
+      '<p class="hint gnav-h">' + (gi + 1) + " / " + groups.length + "　左右にスワイプで切り替え</p>" +
+      '<h2 class="grp"><i style="--ac:' + cur.ac + '"></i>' + esc(cur.a) + "<span>" + cur.ys.length + '件</span></h2><div class="list">' +
+      cur.ys.map(row).join("") +
+      "</div>";
     return h;
   }
   function openGuide(id, q) {
@@ -10932,7 +10957,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     const M = $("main");
     M.addEventListener("touchstart", (e) => {
       x0 = null;
-      if (S.tab !== "tools" || e.touches.length !== 1) return;
+      if ((S.tab !== "tools" && !(S.tab === "guide" && !String(S.glQ || "").trim())) || e.touches.length !== 1) return;
       const el = e.target;
       if (el.closest("input,select,textarea,.cm-t,.tscroll,[data-noswipe]")) return;
       for (let n = el; n && n !== M; n = n.parentElement) if (n.scrollWidth > n.clientWidth + 4 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return;
@@ -10942,7 +10967,10 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       if (x0 == null) return;
       const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
       x0 = null;
-      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 700) stepTool(dx < 0 ? 1 : -1);
+      if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 700) {
+        if (S.tab === "guide") glStep(dx < 0 ? 1 : -1);
+        else stepTool(dx < 0 ? 1 : -1);
+      }
     }, { passive: true });
   })();
   $("main").addEventListener("click", (e) => {
