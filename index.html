@@ -2979,6 +2979,15 @@ button.dz-icd { cursor:pointer; text-decoration:underline; text-underline-offset
 .dz-src.evA { border-color:var(--ok, #2a8f5a); }
 .dz-src.evB { border-style:dashed; }
 .dz-evn { margin:0 0 4px; }
+.dz-chk { margin:14px 0 0; }
+.dz-stale { margin:2px 0 10px; padding:9px 11px; border:1px solid var(--warn, #c77700); border-radius:8px; font-size:.9em; line-height:1.6; }
+.dz-stale .dz-src { margin-left:6px; }
+.dz-go { font:inherit; font-weight:700; padding:0; border:0; background:transparent; color:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+.dz-sec { display:block; font-size:.76em; opacity:.7; }
+.kx-hist { margin:0; padding:0; list-style:none; }
+.kx-hist li { padding:7px 0; border-top:1px solid var(--rule); font-size:.9em; line-height:1.6; }
+.kx-hist li:first-child { border-top:0; }
+.kx-hist b { display:block; font-size:.82em; opacity:.75; font-weight:600; }
 .dz-diff li { padding:4px 0 4px 1em; text-indent:-1em; font-size:.92em; }
 .dz-diff li::before { content:"・"; }
 .dz-links { display:flex; flex-wrap:wrap; gap:6px; }
@@ -4748,6 +4757,16 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       glStep(+gst.dataset.gstep);
       return;
     }
+    const zg = e.target.closest("[data-dzgo]");
+    if (zg) {
+      S.dzDrug = "";
+      S.dzSel = zg.dataset.dzgo;
+      lsSet("pu-dz", S.dzSel);
+      if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
+      const t = document.querySelector(".dz");
+      if (t) t.scrollIntoView({ block: "start" });
+      return;
+    }
     const zb = e.target.closest("[data-dzbr]");
     if (zb) {
       openBranch(zb.dataset.dzbr);
@@ -5392,7 +5411,62 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
             pts.map((i) => '<button type="button" class="pt-j" data-dzpt="' + esc(i) + '">' + esc(ptBy[i].n) + "</button>").join("") +
             "</div>"
           : "");
-      return '<div class="dz-one"><div class="dz-icds">' + icd + "</div>" + secs + evH + diff + links + "</div>";
+      // 最終確認日と、出典ガイドラインがその後に更新された場合の「要見直し」
+      const chk = x.checkedAt || d.checkedAt || "";
+      const stale = [...new Set(arr(x.secs).flatMap((sc) => arr(sc.rows).map((r) => r.s)))]
+        .map((k) => wById[k])
+        .filter((w) => {
+          if (!w || !chk) return false;
+          const g = w.guide || {};
+          return String(g.reviewedAt || "").slice(0, 10) > chk || (g.basedOn && w.currentVersion && g.basedOn !== w.currentVersion);
+        });
+      const warn = stale.length
+        ? '<div class="dz-stale"><b>要見直し</b>　このページの確認後に、出典のガイドラインが更新された。下の内容は古い可能性がある。' +
+          stale.map((w) => '<button type="button" class="dz-src" data-guide="' + esc(w.id) + '">' + esc((d.srcs || {})[w.id] || w.name) + "</button>").join("") +
+          "</div>"
+        : "";
+      const foot = chk ? '<p class="hint dz-chk">最終確認 <span class="mono">' + esc(chk) + "</span>（出典のガイドラインの要約と照合した日）</p>" : "";
+      return '<div class="dz-one">' + warn + '<div class="dz-icds">' + icd + "</div>" + secs + evH + diff + links + foot + "</div>";
+    };
+    // 薬から探す：ツールの薬剤名と dz.terms のうち、本文に出てくるもの
+    const rowsAll = d.list.flatMap((x) => arr(x.secs).flatMap((sc) => arr(sc.rows).map((r) => ({ x, h: sc.h, r }))));
+    const allTxt = rowsAll.map((o) => o.r.t).join("\n");
+    const dn = new Map();
+    const addN = (n, b) => {
+      n = String(n || "").replace(/（.*?）/g, "").trim();
+      if (n.length > 1 && !dn.has(n) && allTxt.includes(n)) dn.set(n, b || "");
+    };
+    [arr((TD.ix || {}).drugs), arr((TD.preg || {}).drugs), arr((TD.cmp || {}).drugs), arr((TD.cp || {}).oral), arr((TD.cp || {}).lai)].forEach((l) => l.forEach((z) => addN(z.n, z.b)));
+    arr(d.terms).forEach((n) => addN(n, ""));
+    arr(d.skip).forEach((n) => dn.delete(n));
+    const cls = arr(d.classes).filter((n) => allTxt.includes(n));
+    if (S.dzDrug === undefined) S.dzDrug = "";
+    const drugSel = dn.size
+      ? '<label class="sr" for="dz-drug">薬から探す</label><select id="dz-drug" class="field dz-sel" data-dzdrug><option value="">薬から探す（' + (dn.size + cls.length) + "）</option>" +
+        '<optgroup label="薬">' +
+        [...dn.keys()].sort((a, b) => a.localeCompare(b, "ja")).map((n) => '<option value="' + esc(n) + '"' + (S.dzDrug === n ? " selected" : "") + ">" + esc(n + (dn.get(n) ? "（" + dn.get(n) + "）" : "")) + "</option>").join("") +
+        "</optgroup>" +
+        (cls.length ? '<optgroup label="薬の種類">' + cls.map((n) => '<option value="' + esc(n) + '"' + (S.dzDrug === n ? " selected" : "") + ">" + esc(n) + "</option>").join("") + "</optgroup>" : "") +
+        "</select>"
+      : "";
+    const drugRes = () => {
+      const q = S.dzDrug;
+      const hits = rowsAll.filter((o) => o.r.t.includes(q));
+      const ids = [...new Set(hits.map((o) => o.x.id))];
+      return (
+        '<div class="dz-one"><p class="hint">「' + esc(q) + "」が出てくる行（" + ids.length + "疾患・" + hits.length + "行）。疾患名を押すと、その疾患のページが開く。</p>" +
+        ids
+          .map((id) => {
+            const hs = hits.filter((o) => o.x.id === id);
+            return (
+              '<h4 class="dz-h"><button type="button" class="dz-go" data-dzgo="' + esc(id) + '">' + esc(hs[0].x.n) + " ›</button></h4><ul class=\"dz-rows\">" +
+              hs.map((o) => '<li><span><small class="dz-sec">' + esc(o.h) + "</small>" + mdInline(esc(o.r.t).split(esc(q)).join("**" + esc(q) + "**")) + "</span>" + srcBtn(o.r) + "</li>").join("") +
+              "</ul>"
+            );
+          })
+          .join("") +
+        "</div>"
+      );
     };
     if (S.dzSel === undefined) S.dzSel = lsGet("pu-dz") || "";
     const cur = d.list.find((x) => x.id === S.dzSel);
@@ -5406,7 +5480,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
             '<optgroup label="' + esc(a) + '">' +
             d.list
               .filter((x) => (x.area || "") === a)
-              .map((x) => '<option value="' + esc(x.id) + '"' + (cur && cur.id === x.id ? " selected" : "") + ">" + esc(x.n) + "</option>")
+              .map((x) => '<option value="' + esc(x.id) + '"' + (!S.dzDrug && cur && cur.id === x.id ? " selected" : "") + ">" + esc(x.n) + "</option>")
               .join("") +
             "</optgroup>",
         )
@@ -5414,7 +5488,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       "</select>";
     return (
       '<h2 class="grp"><i style="--ac:var(--accent)"></i>疾患別の治療<span>' + d.list.length + "疾患</span></h2>" +
-      '<div class="dz">' + sel + (cur ? one(cur) : '<p class="hint">' + esc(d.intro || "") + "</p>") + "</div>"
+      '<div class="dz">' + sel + drugSel + (S.dzDrug && dn.size ? drugRes() : cur ? one(cur) : '<p class="hint">' + esc(d.intro || "") + "</p>") + "</div>"
     );
   }
   let GL_AREAS = [];
@@ -5433,8 +5507,15 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
   document.addEventListener("change", (e) => {
     const gs = e.target.closest && e.target.closest("[data-gsel]");
     if (gs) return glArea(gs.value);
+    const dg = e.target.closest && e.target.closest("[data-dzdrug]");
+    if (dg) {
+      S.dzDrug = dg.value;
+      if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
+      return;
+    }
     const el = e.target.closest && e.target.closest("[data-dzsel]");
     if (!el) return;
+    S.dzDrug = "";
     S.dzSel = el.value;
     lsSet("pu-dz", el.value || null);
     if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
@@ -6847,6 +6928,31 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
       $("memo-state").textContent = "保存できませんでした";
     }
   });
+  // 更新履歴：ツール・分岐点・疾患別の治療・自動収集の記録を日付順にまとめる
+  function histHTML() {
+    const xs = [];
+    const day = (v) => String(v || "").slice(0, 10);
+    const TL = {};
+    TOOLS.forEach(([k, l]) => (TL[k] = l));
+    Object.keys(TD || {}).forEach((k) => {
+      const d = TD[k] || {};
+      const nm = k === "dz" ? "疾患別の治療" : "ツール：" + (TL[k] || k);
+      arr(d.changelog).forEach((c) => xs.push({ d: day(c.date), w: nm, t: c.text }));
+    });
+    arr(S.branches).forEach((b) => arr(b.changelog).forEach((c) => xs.push({ d: day(c.date), w: "分岐点：" + b.title, t: c.text })));
+    arr((S.meta || {}).runs).forEach((r) => xs.push({ d: day(r.at), w: "自動収集", t: r.summary }));
+    const ys = xs.filter((x) => x.d && x.t).sort((a, b) => b.d.localeCompare(a.d));
+    if (!ys.length) return "";
+    const N = S.histAll ? 300 : 30;
+    return (
+      '<section class="panel"><h2>更新履歴</h2><div class="pb"><details class="kx-histd"' + (S.histOpen ? " open" : "") + ' data-hist><summary>内容がいつ変わったかを見る（' + ys.length + "件）</summary>" +
+      '<ul class="kx-hist">' +
+      ys.slice(0, N).map((x) => '<li><b><span class="mono">' + esc(x.d) + "</span>　" + esc(x.w) + "</b>" + esc(x.t) + "</li>").join("") +
+      "</ul>" +
+      (ys.length > N ? '<button type="button" class="btn" data-histall>さらに古い履歴を表示</button>' : "") +
+      "</details></div></section>"
+    );
+  }
   function infoHTML() {
     const m = S.meta || {};
     const cnt = (t) => S.items.filter((x) => x.type === t || kindOf(x) === t).length;
@@ -6884,6 +6990,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     if (window.KairosDevice) h += window.KairosDevice.html();
     if (window.KairosReport) h += window.KairosReport.html();
     if (window.KairosAdmin) h += window.KairosAdmin.html();
+    h += histHTML();
     h += '<section class="panel"><h2>自動収集</h2><div class="pb">';
     h +=
       '<dl class="facts"><dt>最終収集</dt><dd class="mono">' +
@@ -7021,6 +7128,20 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
     if (window.KairosDevice) window.KairosDevice.bind();
     if (window.KairosReport) window.KairosReport.bind(() => "最後に見たツール：" + ((TOOLS.find((t) => t[0] === S.tool) || [])[1] || ""));
     if (window.KairosAdmin) window.KairosAdmin.bind();
+    const bindHist = () => {
+      const hd = document.querySelector("[data-hist]");
+      if (!hd) return;
+      hd.addEventListener("toggle", () => (S.histOpen = hd.open));
+      const ha = hd.querySelector("[data-histall]");
+      if (ha)
+        ha.addEventListener("click", () => {
+          S.histAll = true;
+          S.histOpen = true;
+          hd.closest("section").outerHTML = histHTML();
+          bindHist();
+        });
+    };
+    bindHist();
     document.querySelectorAll("[data-theme-set]").forEach((b) =>
       b.addEventListener("click", () => {
         S.theme = b.dataset.themeSet;
