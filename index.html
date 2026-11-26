@@ -2976,6 +2976,9 @@ button.dz-icd { cursor:pointer; text-decoration:underline; text-underline-offset
 .dz-rows li > span { display:block; }
 .dz-src { display:inline-block; margin-top:3px; font:inherit; font-size:.76em; padding:1px 8px; border-radius:999px; border:1px solid var(--rule); background:transparent; color:inherit; opacity:.85; cursor:pointer; text-align:left; }
 .dz-src.jp { border-color:var(--accent); }
+.dz-src.evA { border-color:var(--ok, #2a8f5a); }
+.dz-src.evB { border-style:dashed; }
+.dz-evn { margin:0 0 4px; }
 .dz-diff li { padding:4px 0 4px 1em; text-indent:-1em; font-size:.92em; }
 .dz-diff li::before { content:"・"; }
 .dz-links { display:flex; flex-wrap:wrap; gap:6px; }
@@ -5348,6 +5351,29 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
         : "";
       const br = arr(x.br).filter((i) => bById[i]);
       const pts = arr(x.pt).filter((i) => ptBy[i]);
+      // ガイドライン以外のエビデンス：この疾患の分岐点に紐づく論文・承認情報のうち、信頼度A・Bのもの
+      const evIds = new Set(arr(x.ev));
+      br.forEach((i) => arr(bById[i].itemIds).forEach((k) => evIds.add(k)));
+      const GR = { A: 0, B: 1 };
+      const evs = arr(S.items)
+        .filter((it) => it.type !== "guideline" && it.cred && it.cred.grade in GR && (evIds.has(it.id) || arr(it.branchIds).some((b) => br.includes(b))))
+        .sort((a, b) => GR[a.cred.grade] - GR[b.cred.grade] || String(b.date || "").localeCompare(String(a.date || "")));
+      const EVMAX = 8;
+      const cut = (t, n) => (String(t).length > n ? String(t).slice(0, n) + "…" : String(t));
+      const evH = evs.length
+        ? '<h4 class="dz-h">ガイドライン以外のエビデンス</h4><p class="hint dz-evn">メタ解析・無作為化比較試験・国内の承認審査など。信頼度は研究デザインと情報源で付けている（A：質の高い系統的レビューや検証的な試験、規制当局の文書。B：それに次ぐもの）。</p><ul class="dz-rows">' +
+          evs
+            .slice(0, EVMAX)
+            .map(
+              (it) =>
+                "<li><span>" + mdInline(esc(String(arr(it.clinical)[0] || it.tldr || it.title || "").replace(/\*\*/g, ""))) + "</span>" +
+                '<button type="button" class="dz-src ev' + it.cred.grade + '" data-open="' + esc(it.id) + '">信頼度' + esc(it.cred.grade) + "｜" + esc(cut(it.evidence || it.cred.design || "", 22)) +
+                (it.source ? "｜" + esc(cut(it.source, 22)) : "") + (it.date ? "｜" + esc(String(it.date).slice(0, 4)) : "") + "</button></li>",
+            )
+            .join("") +
+          "</ul>" +
+          (evs.length > EVMAX ? '<p class="hint">ほか' + (evs.length - EVMAX) + "件は、下の分岐点から見られます。</p>" : "")
+        : "";
       const links =
         (br.length
           ? '<h4 class="dz-h">迷いやすい場面（分岐点）</h4><div class="dz-links">' +
@@ -5359,7 +5385,7 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
             pts.map((i) => '<button type="button" class="pt-j" data-dzpt="' + esc(i) + '">' + esc(ptBy[i].n) + "</button>").join("") +
             "</div>"
           : "");
-      return '<div class="dz-one"><div class="dz-icds">' + icd + "</div>" + secs + diff + links + "</div>";
+      return '<div class="dz-one"><div class="dz-icds">' + icd + "</div>" + secs + evH + diff + links + "</div>";
     };
     if (S.dzSel === undefined) S.dzSel = lsGet("pu-dz") || "";
     const cur = d.list.find((x) => x.id === S.dzSel);
