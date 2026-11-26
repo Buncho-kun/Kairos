@@ -2955,7 +2955,8 @@ textarea {
 .pg-ng { margin-top:10px; padding-top:8px; border-top:1px dashed var(--rule); }
 .pg-ngi { display:block; width:100%; text-align:left; font:inherit; font-size:.85em; padding:6px 0; background:none; border:0; color:inherit; opacity:.8; cursor:pointer; }
 .pg-ngi b { margin-right:8px; }
-.dz .fold { margin-bottom:8px; }
+.dz-sel { width:100%; margin:4px 0 10px; }
+.dz-one { padding-bottom:6px; }
 .dz-icds { display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 4px; }
 .dz-icd { font:inherit; font-size:.8em; padding:3px 9px; border-radius:6px; border:1px solid var(--rule); background:transparent; color:inherit; }
 button.dz-icd { cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
@@ -5337,14 +5338,38 @@ mark.gd.cur { background:var(--accent-soft); box-shadow:0 0 0 1.5px var(--accent
             pts.map((i) => '<button type="button" class="pt-j" data-dzpt="' + esc(i) + '">' + esc(ptBy[i].n) + "</button>").join("") +
             "</div>"
           : "");
-      return fold("g:dz:" + x.id, esc(x.n), esc(arr(x.icd).map((c) => c.c).join("・")), '<div class="dz-icds">' + icd + "</div>" + secs + diff + links);
+      return '<div class="dz-one"><div class="dz-icds">' + icd + "</div>" + secs + diff + links + "</div>";
     };
+    if (S.dzSel === undefined) S.dzSel = lsGet("pu-dz") || "";
+    const cur = d.list.find((x) => x.id === S.dzSel);
+    const areas = [...new Set(d.list.map((x) => x.area || ""))];
+    const sel =
+      '<label class="sr" for="dz-sel">疾患を選ぶ</label><select id="dz-sel" class="field big dz-sel" data-dzsel>' +
+      '<option value="">疾患を選ぶ（' + d.list.length + "疾患）</option>" +
+      areas
+        .map(
+          (a) =>
+            '<optgroup label="' + esc(a) + '">' +
+            d.list
+              .filter((x) => (x.area || "") === a)
+              .map((x) => '<option value="' + esc(x.id) + '"' + (cur && cur.id === x.id ? " selected" : "") + ">" + esc(x.n) + "</option>")
+              .join("") +
+            "</optgroup>",
+        )
+        .join("") +
+      "</select>";
     return (
       '<h2 class="grp"><i style="--ac:var(--accent)"></i>疾患別の治療<span>' + d.list.length + "疾患</span></h2>" +
-      '<p class="hint">' + esc(d.intro || "") + "</p>" +
-      '<div class="dz">' + d.list.map(one).join("") + "</div>"
+      '<div class="dz">' + sel + (cur ? one(cur) : '<p class="hint">' + esc(d.intro || "") + "</p>") + "</div>"
     );
   }
+  document.addEventListener("change", (e) => {
+    const el = e.target.closest && e.target.closest("[data-dzsel]");
+    if (!el) return;
+    S.dzSel = el.value;
+    lsSet("pu-dz", el.value || null);
+    if ($("gl-body")) $("gl-body").innerHTML = guidesListHTML();
+  });
   function guidesListHTML() {
     if (S.loading && !S.watch.length) return '<div class="notice">読み込み中…</div>';
     let xs = S.watch.filter((w) => w.domain === "psy");
